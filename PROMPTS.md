@@ -12,3 +12,12 @@ create the project structure.  you can model it after [ollamatea](https://github
 
 ### 2026-01-09T22:30:00Z - Taskfile Migration
 I prefer Taskfile to makefile.  convert the makefile to a taskfile and update the documentation
+
+### 2026-01-09T22:35:00Z - Auto Database Download
+the --db path option is optional and should default to `dank-data.duckdb`.  If there is no brands table present, it should be downloaded from the https://github.com/AgentDank/dank-data/blob/main/snapshots/us/ct/2025-04-03/us_ct_brands.duckdb.zst
+
+### 2026-01-09T22:40:00Z - Core Implementation Complete
+go ahead and implement these next steps:
+- Implement DuckDB table existence check
+- Add data loader to query the brands table
+- Build the UI with ProductBrowser component
