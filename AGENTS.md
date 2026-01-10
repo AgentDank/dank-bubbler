@@ -1,10 +1,12 @@
-# Prompt Zero
+# Agent Configuration & Maintenance
 
-This is Evan's first prompt for this project.  You can erase this content after you copy it to PROMPTS.md.  Create an AGENTS.md and a README.md file for further maintenance
+This file tracks agent operations and project maintenance notes.
 
-# Prompt Archive
+## Key Directives
 
-You will maintain a PROMPTS.md file with timestamps in ISO 8601 format.  You will always append the last user prompt to this.  You will not delete prompt history.
+- **Prompt History**: Maintained in [PROMPTS.md](PROMPTS.md) with ISO 8601 timestamps
+- **Documentation**: See [README.md](README.md) for project overview
+- **Process**: Always append new prompts to PROMPTS.md; never delete history
 
 # dank-bubbler Project
 
