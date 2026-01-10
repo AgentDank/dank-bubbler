@@ -14,11 +14,18 @@ dank-bubbler/
 ├── tests/                 # Test fixtures and data
 ├── dankbubbler.go         # Main package definition
 ├── go.mod
-├── Makefile
+├── Taskfile.yaml          # Task automation
 └── README.md
 ```
 
 ## Setup
+
+### Prerequisites
+
+- Go 1.23 or later
+- [Task](https://taskfile.dev) - Install with: `brew install go-task` or `choco install go-task` or `apt-get install go-task`
+
+### Getting Started
 
 1. **Initialize Go module** (already done):
    ```bash
@@ -27,14 +34,36 @@ dank-bubbler/
 
 2. **Install dependencies**:
    ```bash
-   go mod tidy
+   task tidy
    ```
 
-3. **Build the brand-demo**:
+3. Task Commands
+
+| Task | Description |
+|------|-------------|
+| `task` | Show available tasks (default) |
+| `task build` | Build all tools |
+| `task build-demo` | Build brand-demo tool |
+| `task clean` | Remove build artifacts |
+| `task install` | Install tools into $GOPATH/bin |
+| `task test` | Run tests |
+| `task lint` | Run golangci-lint |
+| `task fmt` | Format code |
+| `task tidy` | Tidy go.mod |
+| `task run -- --db <path>` | Run brand-demo with database path |
+
+## **Build the brand-demo**:
    ```bash
-   make build-demo
+   task build-demo
+   # or run all builds
+   task build
+   ```
+
+4. **List available tasks**:
+   ```bash
+   task
    # or
-   go build -o ./bin/db-brand-demo ./cmd/brand-demo
+   task -l
    ```
 
 ## Dependencies

@@ -9,3 +9,6 @@ read AGENTS.md and operate the prompt there until you need more information from
 
 ### 2026-01-09T22:16:00Z - Project Structure Setup
 create the project structure.  you can model it after [ollamatea](https://github.com/NimbleMarkets/ollamatea) which is a similar project but for ollama inferencing and bubbletea components.    this project will be module `github.com/AgentDank/dank-bubbler`
+
+### 2026-01-09T22:30:00Z - Taskfile Migration
+I prefer Taskfile to makefile.  convert the makefile to a taskfile and update the documentation

@@ -23,6 +23,20 @@ A demo application showcasing a product browser for the brands database table.
 - Format: ZST-compressed DuckDB
 - URL: https://github.com/AgentDank/dank-data/blob/main/snapshots/us/ct/2025-04-03/us_ct_brands.duckdb.zst
 
+## Development
+
+Refer to [DEVELOPMENT.md](DEVELOPMENT.md) for development setup, available tasks, and contribution guidelines.
+
+Use [Task](https://taskfile.dev) to automate common workflows:
+```bash
+task              # List all available tasks
+task build        # Build all tools
+task test         # Run tests
+task fmt          # Format code
+task lint         # Run linter
+task run -- --db <path>  # Run brand-demo
+```
+
 ## Dependencies
 
 - [BubbleTea](https://github.com/charmbracelet/bubbletea) - TUI framework
