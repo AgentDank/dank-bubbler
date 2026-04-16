@@ -28,7 +28,7 @@ func TestBrandFilterApplyAndClear(t *testing.T) {
 		t.Fatalf("expected 2 brand options, got %d", len(pb.filterOptions))
 	}
 
-	pb.filterIdx = 1
+	pb.Update(keyPress("j"))
 	pb.Update(keyEnter())
 
 	if pb.filterMode != FilterModeNone {

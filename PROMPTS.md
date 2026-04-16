@@ -51,3 +51,21 @@ commit this as a checkpoint and then fix any linter errors
 
 ### 2026-04-16T19:14:26Z - Commit Lint Fixes
 commit them
+
+### 2026-04-16T19:21:16Z - Add Header And Footer Rows
+great lets start working on the TUI... i see the entire thing isn't flowing entirely properly... but let's start with adding a header row and a footer row... the header row says "𓁹‿𓁹 AgentDank dank-bubbler 𖠞༄" right justified with a background.   the footer has help.   the other boxes dfit in between
+
+### 2026-04-16T19:34:53Z - Tighten TUI Box Sizing
+it only looks correct if i make the terminal very wide.   make sure that the product box list isn't too tall and that all of the boxes are properly sized
+
+### 2026-04-16T19:43:33Z - Use Bubbles Help Footer
+for help we should use the bubbletea / bubbles help component
+
+### 2026-04-16T19:55:24Z - Fix List Wrapping And Box Alignment
+i think list size is not working correctly, particularly when it wraps.   also the right sides of the other boxes are not aligned with the right edge
+
+### 2026-04-16T19:43:45Z - Ask About List Clipping And Widget
+can the list box clip the entries if they don't fit?  what list widget are we using?
+
+### 2026-04-16T20:02:17Z - Switch To Bubbles List
+use "charm.land/bubbles/v2/list"

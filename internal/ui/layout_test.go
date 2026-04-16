@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/AgentDank/dank-bubbler/internal/models"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestLayoutDimensions(t *testing.T) {
@@ -21,8 +23,25 @@ func TestLayoutDimensions(t *testing.T) {
 	// Create browser
 	pb := NewProductBrowser(products, brands, nil)
 
-	// Test cases for different window sizes
+	wideSize := struct{ w, h int }{80, 24}
+	pb.Update(tea.WindowSizeMsg{Width: wideSize.w, Height: wideSize.h})
+
+	wideView := pb.View()
+	wideContent := wideView.Content
+	wideText := ansi.Strip(wideContent)
+
+	if !strings.Contains(wideText, appHeader) {
+		t.Fatalf("expected header bar to contain app title")
+	}
+
+	if !strings.Contains(wideText, "q quit") {
+		t.Fatalf("expected footer bar to contain help text")
+	}
+
+	// Test cases for different window sizes, including narrower terminals.
 	testSizes := []struct{ w, h int }{
+		{60, 20},
+		{72, 20},
 		{80, 24},
 		{100, 40},
 		{120, 50},
@@ -33,13 +52,21 @@ func TestLayoutDimensions(t *testing.T) {
 		pb.Update(tea.WindowSizeMsg{Width: sz.w, Height: sz.h})
 
 		view := pb.View()
+		content := view.Content
 
-		actualHeight := lipgloss.Height(view.Content)
-		actualWidth := lipgloss.Width(view.Content)
+		actualHeight := lipgloss.Height(content)
+		actualWidth := lipgloss.Width(content)
+		lines := strings.Split(ansi.Strip(content), "\n")
+		middleMaxWidth := 0
+		if len(lines) > 2 {
+			for _, line := range lines[1 : len(lines)-1] {
+				middleMaxWidth = max(middleMaxWidth, lipgloss.Width(line))
+			}
+		}
 
 		// Check Width
 		if actualWidth > sz.w {
-			t.Logf("Full View:\n%s", view.Content)
+			t.Logf("Full View:\n%s", content)
 			t.Errorf("Window Size: %dx%d. Generated View Width: %d. Overflow: %d", sz.w, sz.h, actualWidth, actualWidth-sz.w)
 
 			// Analyze components to see where the overflow is
@@ -66,6 +93,10 @@ func TestLayoutDimensions(t *testing.T) {
 
 			calcW := leftW + rightInfoW // since rightInfoW > rightChartW
 			t.Logf("Calculated Expected Width: %d (Left: %d + RightInfo: %d)", calcW, leftW, rightInfoW)
+		}
+
+		if middleMaxWidth != sz.w {
+			t.Errorf("Window Size: %dx%d. Middle content width: %d. Expected: %d", sz.w, sz.h, middleMaxWidth, sz.w)
 		}
 
 		// Check Height

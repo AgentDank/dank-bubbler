@@ -6,10 +6,14 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/barchart"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
@@ -31,12 +35,16 @@ type ProductBrowser struct {
 	focused       bool
 	loader        *data.Loader
 	activeFilter  string
+	help          help.Model
+	leftList      list.Model
 }
 
 // FilterMode represents the current filter type
 type FilterMode int
 
 const (
+	appHeader = "𓁹‿𓁹 AgentDank dank-bubbler 𖠞༄"
+
 	FilterModeNone FilterMode = iota
 	FilterModeByBrand
 	FilterModeByName
@@ -49,12 +57,103 @@ type ProductItem struct {
 	product models.Product
 }
 
+type FilterOptionItem struct {
+	value string
+}
+
+type browserHelpKeyMap struct {
+	filterMode FilterMode
+}
+
+var (
+	moveKey = key.NewBinding(
+		key.WithKeys("up", "k", "down", "j"),
+		key.WithHelp("↑/k ↓/j", "move"),
+	)
+	brandFilterKey = key.NewBinding(
+		key.WithKeys("b"),
+		key.WithHelp("b", "brand"),
+	)
+	nameFilterKey = key.NewBinding(
+		key.WithKeys("n"),
+		key.WithHelp("n", "name"),
+	)
+	typeFilterKey = key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "type"),
+	)
+	dateFilterKey = key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "date"),
+	)
+	clearFilterKey = key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "clear"),
+	)
+	applyFilterKey = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "apply"),
+	)
+	cancelFilterKey = key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "cancel"),
+	)
+	quitKey = key.NewBinding(
+		key.WithKeys("q", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	)
+)
+
+func (km browserHelpKeyMap) ShortHelp() []key.Binding {
+	if km.filterMode != FilterModeNone {
+		return []key.Binding{moveKey, applyFilterKey, cancelFilterKey, quitKey}
+	}
+
+	return []key.Binding{
+		moveKey,
+		quitKey,
+		brandFilterKey,
+		nameFilterKey,
+		typeFilterKey,
+		dateFilterKey,
+		clearFilterKey,
+	}
+}
+
+func (km browserHelpKeyMap) FullHelp() [][]key.Binding {
+	if km.filterMode != FilterModeNone {
+		return [][]key.Binding{{moveKey, applyFilterKey, cancelFilterKey, quitKey}}
+	}
+
+	return [][]key.Binding{{moveKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
+}
+
 func (p ProductItem) FilterValue() string {
 	return strings.ToLower(p.product.BrandName)
 }
 
 func (p ProductItem) String() string {
 	return fmt.Sprintf("%s (%s)", p.product.BrandName, p.product.DosageForm)
+}
+
+func (p ProductItem) Title() string {
+	return p.String()
+}
+
+func (p ProductItem) Description() string {
+	return ""
+}
+
+func (f FilterOptionItem) FilterValue() string {
+	return strings.ToLower(f.value)
+}
+
+func (f FilterOptionItem) Title() string {
+	return f.value
+}
+
+func (f FilterOptionItem) Description() string {
+	return ""
 }
 
 // NewProductBrowser creates a new product browser component
@@ -69,6 +168,15 @@ func NewProductBrowser(products []models.Product, brands []models.Brand, loader 
 		filterMode:  FilterModeNone,
 		loader:      loader,
 	}
+	pb.help = help.New()
+	pb.help.ShortSeparator = "  "
+	pb.help.FullSeparator = "  "
+	pb.help.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Bold(true)
+	pb.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	pb.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	pb.help.Styles.Ellipsis = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	pb.leftList = newBrowserList()
+	pb.setProductItems()
 	pb.updateDimensions(80, 24)
 	// Prime selected product details
 	pb.loadSelectedProductDetails()
@@ -94,53 +202,43 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "up", "k":
-			if pb.selectedIdx > 0 {
-				pb.selectedIdx--
-				pb.loadSelectedProductDetails()
-				pb.updateInfoPane()
-			}
-
-		case "down", "j":
-			if pb.selectedIdx < len(pb.products)-1 {
-				pb.selectedIdx++
-				pb.loadSelectedProductDetails()
-				pb.updateInfoPane()
-			}
-
-		case "home":
-			pb.selectedIdx = 0
-			pb.loadSelectedProductDetails()
-			pb.updateInfoPane()
-
-		case "end":
-			if len(pb.products) > 0 {
-				pb.selectedIdx = len(pb.products) - 1
-				pb.loadSelectedProductDetails()
-				pb.updateInfoPane()
-			}
-
 		case "b": // Filter by brand
 			pb.openFilter(FilterModeByBrand)
+			return pb, nil
 
 		case "n": // Filter by name
 			pb.openFilter(FilterModeByName)
+			return pb, nil
 
 		case "t": // Filter by type
 			pb.openFilter(FilterModeByType)
+			return pb, nil
 
 		case "d": // Filter by date
 			pb.openFilter(FilterModeByDate)
+			return pb, nil
 
 		case "c":
 			pb.clearFilter()
+			return pb, nil
 
 		case "f": // Toggle focused mode
 			pb.focused = !pb.focused
+			return pb, nil
 
 		case "ctrl+c", "q":
 			return pb, tea.Quit
 		}
+
+		oldIndex := pb.leftList.Index()
+		var cmd tea.Cmd
+		pb.leftList, cmd = pb.leftList.Update(msg)
+		pb.selectedIdx = pb.leftList.Index()
+		if pb.selectedIdx != oldIndex {
+			pb.loadSelectedProductDetails()
+			pb.updateInfoPane()
+		}
+		return pb, cmd
 	}
 
 	return pb, nil
@@ -148,17 +246,19 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the product browser
 func (pb *ProductBrowser) View() tea.View {
-
-	if len(pb.products) == 0 {
-		return tea.NewView("No products loaded. Check your database connection.\n")
-	}
+	header := pb.renderHeader()
+	footer := pb.renderHelp()
+	middleHeight := pb.middleHeight()
+	leftWidth, rightWidth := pb.paneWidths()
+	topHeight, bottomHeight := pb.rightPaneHeights(middleHeight)
+	pb.configureLeftList(leftWidth, middleHeight)
 
 	// Left pane: product list (1/3 width)
-	leftPane := pb.renderProductList()
+	leftPane := pb.renderProductList(leftWidth, middleHeight)
 
 	// Right panes: top and bottom
-	rightTopPane := pb.renderInfoPane()
-	rightBottomPane := pb.renderCompoundsChart()
+	rightTopPane := pb.renderInfoPane(rightWidth, topHeight)
+	rightBottomPane := pb.renderCompoundsChart(rightWidth, bottomHeight)
 
 	// Combine right panes vertically
 	rightPane := lipgloss.JoinVertical(
@@ -167,107 +267,41 @@ func (pb *ProductBrowser) View() tea.View {
 		rightBottomPane,
 	)
 
-	// Help footer
-	helpText := pb.renderHelp()
-
 	// Combine left and right horizontally
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		leftPane,
 		rightPane,
 	)
+	content = lipgloss.NewStyle().
+		Width(pb.width).
+		MaxWidth(pb.width).
+		Render(content)
 
 	return tea.NewView(lipgloss.JoinVertical(
 		lipgloss.Left,
+		header,
 		content,
-		helpText,
+		footer,
 	))
 }
 
-func (pb *ProductBrowser) renderProductList() string {
-	targetWidth := pb.width / 3
-	listWidth := targetWidth - 4 // Border(2) + Padding(2)
-
-	targetHeight := pb.height - 3  // Leave room for help
-	listHeight := targetHeight - 2 // Border(2)
-
-	if listWidth < 0 {
-		listWidth = 0
-	}
-	if listHeight < 0 {
-		listHeight = 0
-	}
-
-	if pb.filterMode != FilterModeNone {
-		return pb.renderFilterList(listWidth, listHeight)
-	}
-
-	var lines []string
-	header := "Products"
-	if label := pb.currentFilterLabel(); label != "" {
-		header = fmt.Sprintf("%s [%s]", header, label)
-	}
-	lines = append(lines, pb.styledHeader(header))
-
-	rowsAvailable := max(listHeight-1, 0)
-	start := listStart(pb.selectedIdx, len(pb.products), rowsAvailable)
-
-	for i := start; i < len(pb.products) && i < start+rowsAvailable; i++ {
-		product := pb.products[i]
-
-		prefix := "  "
-		if i == pb.selectedIdx {
-			prefix = "> "
-		}
-
-		label := fmt.Sprintf("%s (%s)", product.BrandName, product.DosageForm)
-		line := fmt.Sprintf("%s%-*s", prefix, max(listWidth-3, 0), label)
-		if len(line) > listWidth {
-			line = line[:listWidth]
-		}
-		lines = append(lines, line)
-	}
-
-	if len(pb.products) == 0 {
-		lines = append(lines, "  No matching products")
-	}
-
-	for i := len(lines); i < listHeight; i++ {
-		lines = append(lines, strings.Repeat(" ", listWidth))
-	}
-
-	content := strings.Join(lines, "\n")
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("4")).
-		Width(listWidth).
-		Height(listHeight).
-		Padding(0, 1).
+func (pb *ProductBrowser) renderProductList(outerWidth, outerHeight int) string {
+	style := pb.listPaneStyle()
+	content := pb.leftList.View()
+	return style.
+		Width(outerWidth).
+		Height(outerHeight).
 		Render(content)
 }
 
-func (pb *ProductBrowser) renderInfoPane() string {
-	totalRightWidth := pb.width - (pb.width / 3)
-	infoWidth := totalRightWidth - 6 // Border(2) + Padding(4)
-
-	totalHeight := pb.height - 3
-	topHeight := totalHeight / 2
-	infoHeight := topHeight - 4 // Border(2) + Padding(2)
-
-	if infoWidth < 0 {
-		infoWidth = 0
-	}
-	if infoHeight < 0 {
-		infoHeight = 0
-	}
+func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
+	style := pb.infoPaneStyle()
 
 	if len(pb.products) == 0 {
-		return lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("6")).
-			Width(infoWidth).
-			Height(infoHeight).
-			Padding(1, 2).
+		return style.
+			Width(outerWidth).
+			Height(outerHeight).
 			Render("No product selected")
 	}
 
@@ -326,38 +360,21 @@ func (pb *ProductBrowser) renderInfoPane() string {
 	}
 
 	content := info.String()
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("6")).
-		Width(infoWidth).
-		Height(infoHeight).
-		Padding(1, 2).
+	return style.
+		Width(outerWidth).
+		Height(outerHeight).
 		Render(content)
 }
 
-func (pb *ProductBrowser) renderCompoundsChart() string {
-	totalRightWidth := pb.width - (pb.width / 3)
-	chartWidth := totalRightWidth - 4 // Border(2) + Padding(2)
-
-	totalHeight := pb.height - 3
-	topHeight := totalHeight / 2
-	bottomHeight := totalHeight - topHeight
-	chartHeight := bottomHeight - 2 // Border(2)
-
-	if chartWidth < 0 {
-		chartWidth = 0
-	}
-	if chartHeight < 0 {
-		chartHeight = 0
-	}
+func (pb *ProductBrowser) renderCompoundsChart(outerWidth, outerHeight int) string {
+	style := pb.chartPaneStyle()
+	innerWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
+	innerHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
 
 	if len(pb.products) == 0 {
-		return lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("5")).
-			Width(chartWidth).
-			Height(chartHeight).
-			Padding(1, 2).
+		return style.
+			Width(outerWidth).
+			Height(outerHeight).
 			Render("No product selected")
 	}
 
@@ -391,12 +408,9 @@ func (pb *ProductBrowser) renderCompoundsChart() string {
 	}
 
 	if len(compounds) == 0 {
-		return lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("5")).
-			Width(chartWidth).
-			Height(chartHeight).
-			Padding(1, 2).
+		return style.
+			Width(outerWidth).
+			Height(outerHeight).
 			Render("No compound data available")
 	}
 
@@ -433,44 +447,74 @@ func (pb *ProductBrowser) renderCompoundsChart() string {
 	}
 
 	// Create and configure the chart
-	chart := barchart.New(
-		chartWidth-4,
-		chartHeight-2,
-		barchart.WithHorizontalBars(),
-		barchart.WithMaxValue(maxVal),
-		barchart.WithDataSet(barData),
-	)
+	content := "Window too small for chart"
+	if innerWidth >= 12 && innerHeight >= 4 {
+		chart := barchart.New(
+			max(innerWidth, 1),
+			max(innerHeight, 1),
+			barchart.WithHorizontalBars(),
+			barchart.WithMaxValue(maxVal),
+			barchart.WithDataSet(barData),
+		)
+		content = chart.View()
+	}
 
-	content := chart.View()
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("5")).
-		Width(chartWidth).
-		Height(chartHeight).
-		Padding(0, 1).
+	return style.
+		Width(outerWidth).
+		Height(outerHeight).
 		Render(content)
 }
 
-func (pb *ProductBrowser) renderHelp() string {
-	help := "↑/k: up  ↓/j: down  b: brand  n: name  t: type  d: date  c: clear  f: toggle focus  q: quit"
-	if pb.filterMode != FilterModeNone {
-		help = "↑/k: up  ↓/j: down  enter: apply filter  esc: cancel  q: quit"
+func (pb *ProductBrowser) renderHeader() string {
+	if pb.width <= 0 {
+		return ""
 	}
-	if label := pb.currentFilterLabel(); label != "" {
-		help += "  active: " + label
-	}
+
+	title := ansi.Truncate(appHeader, pb.width, "")
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("8")).
-		Padding(0, 1).
-		Width(pb.width - 2).
-		Render(help)
+		Width(pb.width).
+		MaxWidth(pb.width).
+		MaxHeight(1).
+		Background(lipgloss.Color("236")).
+		Foreground(lipgloss.Color("230")).
+		Bold(true).
+		Render(lipgloss.PlaceHorizontal(pb.width, lipgloss.Right, title))
 }
 
-func (pb *ProductBrowser) styledHeader(text string) string {
+func (pb *ProductBrowser) renderHelp() string {
+	if pb.width <= 0 {
+		return ""
+	}
+
+	helpText := pb.help.View(browserHelpKeyMap{filterMode: pb.filterMode})
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("2")).
-		Bold(true).
-		Render(text)
+		Width(pb.width).
+		MaxWidth(pb.width).
+		MaxHeight(1).
+		Background(lipgloss.Color("238")).
+		Foreground(lipgloss.Color("252")).
+		Render(helpText)
+}
+
+func (pb *ProductBrowser) listPaneStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("4")).
+		Padding(0, 1)
+}
+
+func (pb *ProductBrowser) infoPaneStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("6")).
+		Padding(1, 2)
+}
+
+func (pb *ProductBrowser) chartPaneStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("5")).
+		Padding(0, 1)
 }
 
 func (pb *ProductBrowser) styledLabel(text string) string {
@@ -481,14 +525,37 @@ func (pb *ProductBrowser) styledLabel(text string) string {
 
 func (pb *ProductBrowser) updateInfoPane() {
 	// Update viewport if needed
-	pb.infoPaneView.SetHeight(pb.height - 3)
+	pb.infoPaneView.SetHeight(pb.middleHeight())
 	pb.infoPaneView.SetWidth(pb.width / 2)
 }
 
 func (pb *ProductBrowser) updateDimensions(width, height int) {
 	pb.width = width
 	pb.height = height
-	pb.infoPaneView = viewport.New(viewport.WithWidth(width/2), viewport.WithHeight(height-3))
+	pb.help.SetWidth(width)
+	pb.infoPaneView = viewport.New(viewport.WithWidth(width/2), viewport.WithHeight(pb.middleHeight()))
+}
+
+func (pb *ProductBrowser) configureLeftList(outerWidth, outerHeight int) {
+	style := pb.listPaneStyle()
+	listWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
+	listHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
+
+	pb.leftList.SetSize(listWidth, listHeight)
+	if pb.filterMode != FilterModeNone {
+		pb.leftList.Title = pb.filterTitle
+		pb.leftList.SetShowTitle(true)
+		pb.filterIdx = pb.leftList.Index()
+		return
+	}
+
+	title := "Products"
+	if label := pb.currentFilterLabel(); label != "" {
+		title = fmt.Sprintf("%s [%s]", title, label)
+	}
+	pb.leftList.Title = title
+	pb.leftList.SetShowTitle(true)
+	pb.selectedIdx = pb.leftList.Index()
 }
 
 // loadSelectedProductDetails enriches the currently selected product with compound data.
@@ -535,75 +602,37 @@ func (pb *ProductBrowser) openFilter(mode FilterMode) {
 		pb.filterTitle = ""
 		pb.filterOptions = nil
 		pb.filterIdx = 0
+		pb.setProductItems()
+		return
 	}
+
+	pb.setFilterItems()
 }
 
 func (pb *ProductBrowser) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "up", "k":
-		if pb.filterIdx > 0 {
-			pb.filterIdx--
-		}
-	case "down", "j":
-		if pb.filterIdx < len(pb.filterOptions)-1 {
-			pb.filterIdx++
-		}
-	case "home":
-		pb.filterIdx = 0
-	case "end":
-		if len(pb.filterOptions) > 0 {
-			pb.filterIdx = len(pb.filterOptions) - 1
-		}
 	case "enter":
 		pb.applySelectedFilter()
+		return pb, nil
 	case "esc":
 		pb.cancelFilter()
+		return pb, nil
 	case "ctrl+c", "q":
 		return pb, tea.Quit
 	}
 
-	return pb, nil
-}
-
-func (pb *ProductBrowser) renderFilterList(listWidth, listHeight int) string {
-	var lines []string
-	lines = append(lines, pb.styledHeader(pb.filterTitle))
-
-	rowsAvailable := max(listHeight-1, 0)
-	start := listStart(pb.filterIdx, len(pb.filterOptions), rowsAvailable)
-
-	for i := start; i < len(pb.filterOptions) && i < start+rowsAvailable; i++ {
-		prefix := "  "
-		if i == pb.filterIdx {
-			prefix = "> "
-		}
-
-		line := fmt.Sprintf("%s%-*s", prefix, max(listWidth-3, 0), pb.filterOptions[i])
-		if len(line) > listWidth {
-			line = line[:listWidth]
-		}
-		lines = append(lines, line)
+	oldIndex := pb.leftList.Index()
+	var cmd tea.Cmd
+	pb.leftList, cmd = pb.leftList.Update(msg)
+	pb.filterIdx = pb.leftList.Index()
+	if pb.filterIdx != oldIndex {
+		return pb, cmd
 	}
-
-	if len(pb.filterOptions) == 0 {
-		lines = append(lines, "  No options available")
-	}
-
-	for i := len(lines); i < listHeight; i++ {
-		lines = append(lines, strings.Repeat(" ", listWidth))
-	}
-
-	content := strings.Join(lines, "\n")
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("4")).
-		Width(listWidth).
-		Height(listHeight).
-		Padding(0, 1).
-		Render(content)
+	return pb, cmd
 }
 
 func (pb *ProductBrowser) applySelectedFilter() {
+	pb.filterIdx = pb.leftList.Index()
 	if pb.filterIdx < 0 || pb.filterIdx >= len(pb.filterOptions) {
 		pb.cancelFilter()
 		return
@@ -637,6 +666,7 @@ func (pb *ProductBrowser) applySelectedFilter() {
 	pb.products = products
 	pb.selectedIdx = 0
 	pb.activeFilter = pb.filterLabel(mode, value)
+	pb.setProductItems()
 	if len(pb.products) > 0 {
 		pb.loadSelectedProductDetails()
 	}
@@ -648,6 +678,7 @@ func (pb *ProductBrowser) cancelFilter() {
 	pb.filterOptions = nil
 	pb.filterIdx = 0
 	pb.filterTitle = ""
+	pb.setProductItems()
 }
 
 func (pb *ProductBrowser) clearFilter() {
@@ -655,6 +686,7 @@ func (pb *ProductBrowser) clearFilter() {
 	pb.activeFilter = ""
 	pb.products = append([]models.Product(nil), pb.allProducts...)
 	pb.selectedIdx = 0
+	pb.setProductItems()
 	if len(pb.products) > 0 {
 		pb.loadSelectedProductDetails()
 	}
@@ -860,9 +892,93 @@ func (pb *ProductBrowser) loadProductsByDate(day string) ([]models.Product, erro
 	return products, nil
 }
 
-func listStart(selectedIdx, totalItems, visibleRows int) int {
-	if visibleRows <= 0 || totalItems <= visibleRows || selectedIdx < visibleRows {
-		return 0
+func (pb *ProductBrowser) middleHeight() int {
+	return max(pb.height-3, 0)
+}
+
+func (pb *ProductBrowser) paneWidths() (int, int) {
+	totalWidth := max(pb.width, 0)
+	if totalWidth == 0 {
+		return 0, 0
 	}
-	return selectedIdx - visibleRows + 1
+
+	leftWidth := totalWidth / 3
+	const minLeftWidth = 24
+	const minRightWidth = 36
+
+	if totalWidth >= minLeftWidth+minRightWidth {
+		leftWidth = max(leftWidth, minLeftWidth)
+		leftWidth = min(leftWidth, totalWidth-minRightWidth)
+	} else {
+		leftWidth = totalWidth / 2
+	}
+
+	return leftWidth, totalWidth - leftWidth
+}
+
+func (pb *ProductBrowser) rightPaneHeights(totalHeight int) (int, int) {
+	if totalHeight <= 0 {
+		return 0, 0
+	}
+
+	topHeight := totalHeight / 2
+	bottomHeight := totalHeight - topHeight
+	return topHeight, bottomHeight
+}
+
+func newBrowserList() list.Model {
+	delegate := list.NewDefaultDelegate()
+	delegate.ShowDescription = false
+	delegate.SetSpacing(0)
+	delegate.Styles.NormalTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).PaddingLeft(2)
+	delegate.Styles.SelectedTitle = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("46")).
+		Bold(true).
+		PaddingLeft(2)
+	delegate.Styles.DimmedTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).PaddingLeft(2)
+
+	l := list.New(nil, delegate, 0, 0)
+	l.SetShowHelp(false)
+	l.SetShowPagination(false)
+	l.SetShowStatusBar(false)
+	l.SetShowFilter(false)
+	l.SetFilteringEnabled(false)
+	l.DisableQuitKeybindings()
+	l.SetStatusBarItemName("product", "products")
+	l.Styles.TitleBar = lipgloss.NewStyle()
+	l.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+	l.Styles.NoItems = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).PaddingLeft(2)
+	return l
+}
+
+func (pb *ProductBrowser) setProductItems() {
+	items := make([]list.Item, 0, len(pb.products))
+	for _, product := range pb.products {
+		items = append(items, ProductItem{product: product})
+	}
+	pb.leftList.SetItems(items)
+	if len(items) == 0 {
+		pb.leftList.Select(0)
+		pb.selectedIdx = 0
+		return
+	}
+
+	pb.selectedIdx = min(pb.selectedIdx, len(items)-1)
+	pb.leftList.Select(pb.selectedIdx)
+}
+
+func (pb *ProductBrowser) setFilterItems() {
+	items := make([]list.Item, 0, len(pb.filterOptions))
+	for _, option := range pb.filterOptions {
+		items = append(items, FilterOptionItem{value: option})
+	}
+	pb.leftList.SetItems(items)
+	if len(items) == 0 {
+		pb.leftList.Select(0)
+		pb.filterIdx = 0
+		return
+	}
+
+	pb.filterIdx = min(pb.filterIdx, len(items)-1)
+	pb.leftList.Select(pb.filterIdx)
 }
