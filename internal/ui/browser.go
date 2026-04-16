@@ -39,6 +39,7 @@ type FilterMode int
 const (
 	FilterModeNone FilterMode = iota
 	FilterModeByBrand
+	FilterModeByName
 	FilterModeByType
 	FilterModeByDate
 )
@@ -122,8 +123,14 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "b": // Filter by brand
 			pb.openFilter(FilterModeByBrand)
 
+		case "n": // Filter by name
+			pb.openFilter(FilterModeByName)
+
 		case "t": // Filter by type
 			pb.openFilter(FilterModeByType)
+
+		case "d": // Filter by date
+			pb.openFilter(FilterModeByDate)
 
 		case "c":
 			pb.clearFilter()
@@ -445,7 +452,7 @@ func (pb *ProductBrowser) renderCompoundsChart() string {
 }
 
 func (pb *ProductBrowser) renderHelp() string {
-	help := "↑/k: up  ↓/j: down  b: filter by brand  t: filter by type  c: clear filter  f: toggle focus  q: quit"
+	help := "↑/k: up  ↓/j: down  b: brand  n: name  t: type  d: date  c: clear  f: toggle focus  q: quit"
 	if pb.filterMode != FilterModeNone {
 		help = "↑/k: up  ↓/j: down  enter: apply filter  esc: cancel  q: quit"
 	}
@@ -509,9 +516,15 @@ func (pb *ProductBrowser) openFilter(mode FilterMode) {
 	case FilterModeByBrand:
 		pb.filterTitle = "Filter By Brand"
 		err = pb.buildBrandFilterOptions()
+	case FilterModeByName:
+		pb.filterTitle = "Filter By Name"
+		err = pb.buildNameFilterOptions()
 	case FilterModeByType:
 		pb.filterTitle = "Filter By Type"
 		err = pb.buildTypeFilterOptions()
+	case FilterModeByDate:
+		pb.filterTitle = "Filter By Date"
+		err = pb.buildDateFilterOptions()
 	default:
 		pb.filterMode = FilterModeNone
 		return
@@ -607,8 +620,12 @@ func (pb *ProductBrowser) applySelectedFilter() {
 	switch mode {
 	case FilterModeByBrand:
 		products, err = pb.loadProductsByBrand(value)
+	case FilterModeByName:
+		products, err = pb.loadProductsByName(value)
 	case FilterModeByType:
 		products, err = pb.loadProductsByType(value)
+	case FilterModeByDate:
+		products, err = pb.loadProductsByDate(value)
 	default:
 		return
 	}
@@ -652,6 +669,8 @@ func (pb *ProductBrowser) filterLabel(mode FilterMode, value string) string {
 	switch mode {
 	case FilterModeByBrand:
 		return "brand: " + value
+	case FilterModeByName:
+		return "name: " + value
 	case FilterModeByType:
 		return "type: " + value
 	case FilterModeByDate:
@@ -684,6 +703,29 @@ func (pb *ProductBrowser) buildBrandFilterOptions() error {
 	return nil
 }
 
+func (pb *ProductBrowser) buildNameFilterOptions() error {
+	if pb.loader != nil {
+		options, err := pb.loader.GetDistinctNames()
+		if err != nil {
+			return err
+		}
+		pb.filterOptions = options
+		pb.preselectActiveFilter(FilterModeByName)
+		return nil
+	}
+
+	nameMap := make(map[string]struct{})
+	for _, p := range pb.allProducts {
+		nameMap[p.BrandName] = struct{}{}
+	}
+	for name := range nameMap {
+		pb.filterOptions = append(pb.filterOptions, name)
+	}
+	sort.Strings(pb.filterOptions)
+	pb.preselectActiveFilter(FilterModeByName)
+	return nil
+}
+
 func (pb *ProductBrowser) buildTypeFilterOptions() error {
 	if pb.loader != nil {
 		options, err := pb.loader.GetDistinctTypes()
@@ -707,13 +749,43 @@ func (pb *ProductBrowser) buildTypeFilterOptions() error {
 	return nil
 }
 
+func (pb *ProductBrowser) buildDateFilterOptions() error {
+	if pb.loader != nil {
+		options, err := pb.loader.GetDistinctDates()
+		if err != nil {
+			return err
+		}
+		pb.filterOptions = options
+		pb.preselectActiveFilter(FilterModeByDate)
+		return nil
+	}
+
+	dateMap := make(map[string]struct{})
+	for _, p := range pb.allProducts {
+		if p.ApprovalDate.IsZero() {
+			continue
+		}
+		dateMap[p.ApprovalDate.Format("2006-01-02")] = struct{}{}
+	}
+	for day := range dateMap {
+		pb.filterOptions = append(pb.filterOptions, day)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(pb.filterOptions)))
+	pb.preselectActiveFilter(FilterModeByDate)
+	return nil
+}
+
 func (pb *ProductBrowser) preselectActiveFilter(mode FilterMode) {
 	wantPrefix := ""
 	switch mode {
 	case FilterModeByBrand:
 		wantPrefix = "brand: "
+	case FilterModeByName:
+		wantPrefix = "name: "
 	case FilterModeByType:
 		wantPrefix = "type: "
+	case FilterModeByDate:
+		wantPrefix = "date: "
 	}
 
 	if wantPrefix == "" || !strings.HasPrefix(pb.activeFilter, wantPrefix) {
@@ -743,6 +815,20 @@ func (pb *ProductBrowser) loadProductsByBrand(brand string) ([]models.Product, e
 	return products, nil
 }
 
+func (pb *ProductBrowser) loadProductsByName(name string) ([]models.Product, error) {
+	if pb.loader != nil {
+		return pb.loader.LoadProductsByName(name)
+	}
+
+	var products []models.Product
+	for _, product := range pb.allProducts {
+		if strings.EqualFold(product.BrandName, name) {
+			products = append(products, product)
+		}
+	}
+	return products, nil
+}
+
 func (pb *ProductBrowser) loadProductsByType(productType string) ([]models.Product, error) {
 	if pb.loader != nil {
 		return pb.loader.LoadProductsByType(productType)
@@ -751,6 +837,23 @@ func (pb *ProductBrowser) loadProductsByType(productType string) ([]models.Produ
 	var products []models.Product
 	for _, product := range pb.allProducts {
 		if strings.EqualFold(product.DosageForm, productType) {
+			products = append(products, product)
+		}
+	}
+	return products, nil
+}
+
+func (pb *ProductBrowser) loadProductsByDate(day string) ([]models.Product, error) {
+	if pb.loader != nil {
+		return pb.loader.LoadProductsByDate(day)
+	}
+
+	var products []models.Product
+	for _, product := range pb.allProducts {
+		if product.ApprovalDate.IsZero() {
+			continue
+		}
+		if product.ApprovalDate.Format("2006-01-02") == day {
 			products = append(products, product)
 		}
 	}

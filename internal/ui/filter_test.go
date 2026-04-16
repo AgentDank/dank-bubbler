@@ -2,6 +2,7 @@ package ui
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -54,6 +55,40 @@ func TestBrandFilterApplyAndClear(t *testing.T) {
 
 	if len(pb.products) != len(products) {
 		t.Fatalf("expected full product list after clear, got %d", len(pb.products))
+	}
+}
+
+func TestDateFilterApply(t *testing.T) {
+	products := []models.Product{
+		{BrandName: "Alpha", DosageForm: "Flower", RegistrationNumber: "1", ApprovalDate: time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)},
+		{BrandName: "Beta", DosageForm: "Vape", RegistrationNumber: "2", ApprovalDate: time.Date(2026, 4, 9, 0, 0, 0, 0, time.UTC)},
+		{BrandName: "Gamma", DosageForm: "Edible", RegistrationNumber: "3", ApprovalDate: time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC)},
+	}
+
+	pb := NewProductBrowser(products, nil, nil)
+
+	pb.Update(keyPress("d"))
+
+	if pb.filterMode != FilterModeByDate {
+		t.Fatalf("expected date filter mode, got %v", pb.filterMode)
+	}
+
+	if len(pb.filterOptions) != 2 {
+		t.Fatalf("expected 2 date options, got %d", len(pb.filterOptions))
+	}
+
+	if pb.filterOptions[0] != "2026-04-10" {
+		t.Fatalf("expected newest date first, got %q", pb.filterOptions[0])
+	}
+
+	pb.Update(keyEnter())
+
+	if pb.activeFilter != "date: 2026-04-10" {
+		t.Fatalf("expected active date filter to be set, got %q", pb.activeFilter)
+	}
+
+	if len(pb.products) != 2 {
+		t.Fatalf("expected 2 products on selected date, got %d", len(pb.products))
 	}
 }
 
