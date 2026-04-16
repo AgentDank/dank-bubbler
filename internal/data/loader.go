@@ -80,7 +80,7 @@ func (l *Loader) LoadBrands() ([]models.Brand, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query brands: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var brands []models.Brand
 	for rows.Next() {
@@ -123,7 +123,7 @@ func (l *Loader) LoadProducts() ([]models.Product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query products: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var products []models.Product
 	for rows.Next() {
@@ -170,7 +170,7 @@ func (l *Loader) LoadProductsByBrand(brand string) ([]models.Product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query products by brand: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var products []models.Product
 	for rows.Next() {
@@ -217,7 +217,7 @@ func (l *Loader) LoadProductsByType(dosageForm string) ([]models.Product, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query products by dosage form: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var products []models.Product
 	for rows.Next() {
@@ -256,7 +256,7 @@ func (l *Loader) GetDistinctBrands() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query distinct brands: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var brands []string
 	for rows.Next() {
@@ -284,7 +284,7 @@ func (l *Loader) GetDistinctTypes() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query distinct dosage forms: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var types []string
 	for rows.Next() {
@@ -318,7 +318,7 @@ func (l *Loader) GetDistinctDates() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query distinct approval dates: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var dates []string
 	for rows.Next() {
@@ -359,7 +359,7 @@ func (l *Loader) LoadProductsByDate(day string) ([]models.Product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query products by approval date: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var products []models.Product
 	for rows.Next() {
@@ -449,28 +449,28 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 	var aPinene, bMyrcene, bCaryophyllene, limonene, linalool, humulene, ocimene, terpinolene float64
 	if err := cannaRow.Scan(&aPinene, &bMyrcene, &bCaryophyllene, &limonene, &linalool, &humulene, &ocimene, &terpinolene); err == nil {
 		if aPinene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"α-Pinene", aPinene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "α-Pinene", Percentage: aPinene})
 		}
 		if bMyrcene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"β-Myrcene", bMyrcene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "β-Myrcene", Percentage: bMyrcene})
 		}
 		if bCaryophyllene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"β-Caryophyllene", bCaryophyllene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "β-Caryophyllene", Percentage: bCaryophyllene})
 		}
 		if limonene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"Limonene", limonene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "Limonene", Percentage: limonene})
 		}
 		if linalool > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"Linalool", linalool})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "Linalool", Percentage: linalool})
 		}
 		if humulene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"Humulene", humulene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "Humulene", Percentage: humulene})
 		}
 		if ocimene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"Ocimene", ocimene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "Ocimene", Percentage: ocimene})
 		}
 		if terpinolene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{"Terpinolene", terpinolene})
+			product.Compounds = append(product.Compounds, models.Compound{Name: "Terpinolene", Percentage: terpinolene})
 		}
 	}
 

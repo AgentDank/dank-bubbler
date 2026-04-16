@@ -77,7 +77,7 @@ func downloadDatabase(url, targetPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to download database: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download database: HTTP %d", resp.StatusCode)
@@ -95,10 +95,10 @@ func downloadDatabase(url, targetPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 
 	if _, err := io.Copy(outFile, decoder); err != nil {
-		os.Remove(targetPath) // Clean up on failure
+		_ = os.Remove(targetPath) // Clean up on failure
 		return fmt.Errorf("failed to write database: %w", err)
 	}
 
@@ -119,7 +119,7 @@ func ensureDatabase(dbPath string) error {
 	if err := loader.Open(); err != nil {
 		return err
 	}
-	defer loader.Close()
+	defer func() { _ = loader.Close() }()
 
 	hasBrands, err := loader.HasBrandsTable()
 	if err != nil {
@@ -128,7 +128,7 @@ func ensureDatabase(dbPath string) error {
 
 	if !hasBrands {
 		fmt.Fprintf(os.Stderr, "%s table not found, downloading fresh database...\n", "ct_brands")
-		os.Remove(dbPath)
+		_ = os.Remove(dbPath)
 		return downloadDatabase(brandsDatabaseURL, dbPath)
 	}
 
@@ -146,13 +146,13 @@ func main() {
 	pflag.Parse()
 
 	if showHelp {
-		fmt.Fprintf(os.Stdout, usageFormat, os.Args[0])
+		_, _ = fmt.Fprintf(os.Stdout, usageFormat, os.Args[0])
 		pflag.PrintDefaults()
 		os.Exit(0)
 	}
 
 	if showVersion {
-		fmt.Fprintf(os.Stdout, "brand-demo v%s\n", version)
+		_, _ = fmt.Fprintf(os.Stdout, "brand-demo v%s\n", version)
 		os.Exit(0)
 	}
 
@@ -183,7 +183,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "ERROR: failed to open database: %s\n", err)
 		os.Exit(1)
 	}
-	defer loader.Close()
+	defer func() { _ = loader.Close() }()
 
 	if verbose {
 		fmt.Fprintf(os.Stderr, "INFO: Loading brands and products...\n")

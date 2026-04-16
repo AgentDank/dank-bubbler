@@ -294,25 +294,25 @@ func (pb *ProductBrowser) renderInfoPane() string {
 
 	if product.THC > 0 {
 		info.WriteString(pb.styledLabel("THC: "))
-		info.WriteString(fmt.Sprintf("%.2f%%", product.THC))
+		_, _ = fmt.Fprintf(&info, "%.2f%%", product.THC)
 		info.WriteString("\n")
 	}
 
 	if product.THCA > 0 {
 		info.WriteString(pb.styledLabel("THCA: "))
-		info.WriteString(fmt.Sprintf("%.2f%%", product.THCA))
+		_, _ = fmt.Fprintf(&info, "%.2f%%", product.THCA)
 		info.WriteString("\n")
 	}
 
 	if product.CBD > 0 {
 		info.WriteString(pb.styledLabel("CBD: "))
-		info.WriteString(fmt.Sprintf("%.2f%%", product.CBD))
+		_, _ = fmt.Fprintf(&info, "%.2f%%", product.CBD)
 		info.WriteString("\n")
 	}
 
 	if product.CBDA > 0 {
 		info.WriteString(pb.styledLabel("CBDA: "))
-		info.WriteString(fmt.Sprintf("%.2f%%", product.CBDA))
+		_, _ = fmt.Fprintf(&info, "%.2f%%", product.CBDA)
 		info.WriteString("\n")
 	}
 
@@ -321,7 +321,7 @@ func (pb *ProductBrowser) renderInfoPane() string {
 		info.WriteString(pb.styledLabel("Top Compounds:"))
 		info.WriteString("\n")
 		for _, c := range product.Compounds {
-			info.WriteString(fmt.Sprintf("  • %s: %.2f%%\n", c.Name, c.Percentage))
+			_, _ = fmt.Fprintf(&info, "  • %s: %.2f%%\n", c.Name, c.Percentage)
 		}
 	}
 
