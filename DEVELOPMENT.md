@@ -87,6 +87,6 @@ dank-bubbler/
 1. Set up DuckDB Go driver
 2. Implement data loader for brands database
 3. Build ProductBrowser UI component
-4. Implement cannabinoid chart using NTCharts
+4. Implement compound chart using NTCharts
 5. Create filtering views (by brand, type, date)
 6. Build info pane for product details

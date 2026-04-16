@@ -20,9 +20,9 @@ This is a demo of the brands database table.  Create a product browser based on 
 
 Then we will have an info pane that shows the information for the selected product.
 
-We will have an NTCharts horizontal bar chart showing the top 8 cannabinoids for the product.
+We will have an NTCharts horizontal bar chart showing the top 6 compounds for the product.
 
 we will load our data from the dank-data repo.  Here's the current dataset for brands:
-https://github.com/AgentDank/dank-data/blob/main/snapshots/us/ct/2025-04-03/us_ct_brands.duckdb.zst
+https://github.com/AgentDank/dank-data/blob/main/snapshots/us/ct/dank-data.duckdb.zst
 
 It is a ZST compressed DuckDB database.  We can use that as the source.

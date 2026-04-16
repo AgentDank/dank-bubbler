@@ -3,12 +3,15 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/NimbleMarkets/ntcharts/barchart"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
@@ -24,6 +27,7 @@ type ProductBrowser struct {
 	filterOptions []string
 	filterIdx     int
 	focused       bool
+	loader        *data.Loader
 }
 
 // FilterMode represents the current filter type
@@ -50,15 +54,18 @@ func (p ProductItem) String() string {
 }
 
 // NewProductBrowser creates a new product browser component
-func NewProductBrowser(products []models.Product, brands []models.Brand) *ProductBrowser {
+func NewProductBrowser(products []models.Product, brands []models.Brand, loader *data.Loader) *ProductBrowser {
 	pb := &ProductBrowser{
 		products:    products,
 		brands:      brands,
 		selectedIdx: 0,
 		focused:     true,
 		filterMode:  FilterModeNone,
+		loader:      loader,
 	}
 	pb.updateDimensions(80, 24)
+	// Prime selected product details
+	pb.loadSelectedProductDetails()
 	return pb
 }
 
@@ -80,12 +87,14 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if pb.selectedIdx > 0 {
 				pb.selectedIdx--
+				pb.loadSelectedProductDetails()
 				pb.updateInfoPane()
 			}
 
 		case "down", "j":
 			if pb.selectedIdx < len(pb.products)-1 {
 				pb.selectedIdx++
+				pb.loadSelectedProductDetails()
 				pb.updateInfoPane()
 			}
 
@@ -120,20 +129,29 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the product browser
 func (pb *ProductBrowser) View() string {
+
 	if len(pb.products) == 0 {
 		return "No products loaded. Check your database connection.\n"
 	}
 
-	// Left pane: product list
+	// Left pane: product list (1/3 width)
 	leftPane := pb.renderProductList()
 
-	// Right pane: product info
-	rightPane := pb.renderInfoPane()
+	// Right panes: top and bottom
+	rightTopPane := pb.renderInfoPane()
+	rightBottomPane := pb.renderCompoundsChart()
+
+	// Combine right panes vertically
+	rightPane := lipgloss.JoinVertical(
+		lipgloss.Left,
+		rightTopPane,
+		rightBottomPane,
+	)
 
 	// Help footer
 	helpText := pb.renderHelp()
 
-	// Combine panes
+	// Combine left and right horizontally
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		leftPane,
@@ -148,8 +166,18 @@ func (pb *ProductBrowser) View() string {
 }
 
 func (pb *ProductBrowser) renderProductList() string {
-	listWidth := pb.width / 2
-	listHeight := pb.height - 3
+	targetWidth := pb.width / 3
+	listWidth := targetWidth - 4 // Border(2) + Padding(2)
+
+	targetHeight := pb.height - 3  // Leave room for help
+	listHeight := targetHeight - 2 // Border(2)
+
+	if listWidth < 0 {
+		listWidth = 0
+	}
+	if listHeight < 0 {
+		listHeight = 0
+	}
 
 	var lines []string
 	lines = append(lines, pb.styledHeader("Products"))
@@ -186,8 +214,19 @@ func (pb *ProductBrowser) renderProductList() string {
 }
 
 func (pb *ProductBrowser) renderInfoPane() string {
-	infoWidth := pb.width / 2
-	infoHeight := pb.height - 3
+	totalRightWidth := pb.width - (pb.width / 3)
+	infoWidth := totalRightWidth - 6 // Border(2) + Padding(4)
+
+	totalHeight := pb.height - 3
+	topHeight := totalHeight / 2
+	infoHeight := topHeight - 4 // Border(2) + Padding(2)
+
+	if infoWidth < 0 {
+		infoWidth = 0
+	}
+	if infoHeight < 0 {
+		infoHeight = 0
+	}
 
 	if len(pb.products) == 0 {
 		return lipgloss.NewStyle().
@@ -244,11 +283,11 @@ func (pb *ProductBrowser) renderInfoPane() string {
 		info.WriteString("\n")
 	}
 
-	if len(product.Cannabinoids) > 0 {
+	if len(product.Compounds) > 0 {
 		info.WriteString("\n")
-		info.WriteString(pb.styledLabel("Top Cannabinoids:"))
+		info.WriteString(pb.styledLabel("Top Compounds:"))
 		info.WriteString("\n")
-		for _, c := range product.Cannabinoids {
+		for _, c := range product.Compounds {
 			info.WriteString(fmt.Sprintf("  • %s: %.2f%%\n", c.Name, c.Percentage))
 		}
 	}
@@ -263,11 +302,128 @@ func (pb *ProductBrowser) renderInfoPane() string {
 		Render(content)
 }
 
+func (pb *ProductBrowser) renderCompoundsChart() string {
+	totalRightWidth := pb.width - (pb.width / 3)
+	chartWidth := totalRightWidth - 4 // Border(2) + Padding(2)
+
+	totalHeight := pb.height - 3
+	topHeight := totalHeight / 2
+	bottomHeight := totalHeight - topHeight
+	chartHeight := bottomHeight - 2 // Border(2)
+
+	if chartWidth < 0 {
+		chartWidth = 0
+	}
+	if chartHeight < 0 {
+		chartHeight = 0
+	}
+
+	if len(pb.products) == 0 {
+		return lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("5")).
+			Width(chartWidth).
+			Height(chartHeight).
+			Padding(1, 2).
+			Render("No product selected")
+	}
+
+	product := pb.products[pb.selectedIdx]
+
+	// Collect cannabinoids and terpenes with their percentages
+	type compound struct {
+		name  string
+		value float64
+	}
+
+	var compounds []compound
+
+	// Add main cannabinoids
+	if product.THC > 0 {
+		compounds = append(compounds, compound{"THC", product.THC})
+	}
+	if product.THCA > 0 {
+		compounds = append(compounds, compound{"THCA", product.THCA})
+	}
+	if product.CBD > 0 {
+		compounds = append(compounds, compound{"CBD", product.CBD})
+	}
+	if product.CBDA > 0 {
+		compounds = append(compounds, compound{"CBDA", product.CBDA})
+	}
+
+	// Add terpenes from the selected product's derived compounds list.
+	for _, c := range product.Compounds {
+		compounds = append(compounds, compound{c.Name, c.Percentage})
+	}
+
+	if len(compounds) == 0 {
+		return lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("5")).
+			Width(chartWidth).
+			Height(chartHeight).
+			Padding(1, 2).
+			Render("No compound data available")
+	}
+
+	// Sort by value descending and keep top 6
+	sort.Slice(compounds, func(i, j int) bool {
+		return compounds[i].value > compounds[j].value
+	})
+
+	if len(compounds) > 6 {
+		compounds = compounds[:6]
+	}
+
+	// Get max value for scaling
+	var maxVal float64
+	for _, c := range compounds {
+		if c.value > maxVal {
+			maxVal = c.value
+		}
+	}
+
+	// Create bar chart data
+	var barData []barchart.BarData
+	for _, c := range compounds {
+		barData = append(barData, barchart.BarData{
+			Label: c.name,
+			Values: []barchart.BarValue{
+				{
+					Name:  c.name,
+					Value: c.value,
+					Style: lipgloss.NewStyle().Foreground(lipgloss.Color("46")),
+				},
+			},
+		})
+	}
+
+	// Create and configure the chart
+	chart := barchart.New(
+		chartWidth-4,
+		chartHeight-2,
+		barchart.WithHorizontalBars(),
+		barchart.WithMaxValue(maxVal),
+		barchart.WithDataSet(barData),
+	)
+
+	content := chart.View()
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("5")).
+		Width(chartWidth).
+		Height(chartHeight).
+		Padding(0, 1).
+		Render(content)
+}
+
 func (pb *ProductBrowser) renderHelp() string {
 	help := "↑/k: up  ↓/j: down  b: filter by brand  t: filter by type  f: toggle focus  q: quit"
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1).
+		Width(pb.width - 2).
 		Render(help)
 }
 
@@ -294,6 +450,21 @@ func (pb *ProductBrowser) updateDimensions(width, height int) {
 	pb.width = width
 	pb.height = height
 	pb.infoPaneView = viewport.New(width/2, height-3)
+}
+
+// loadSelectedProductDetails enriches the currently selected product with compound data.
+func (pb *ProductBrowser) loadSelectedProductDetails() {
+	if pb.loader == nil || len(pb.products) == 0 {
+		return
+	}
+	reg := pb.products[pb.selectedIdx].RegistrationNumber
+	if reg == "" {
+		return
+	}
+	p, err := pb.loader.LoadProductWithCompounds(reg)
+	if err == nil && p != nil {
+		pb.products[pb.selectedIdx] = *p
+	}
 }
 
 func (pb *ProductBrowser) buildBrandFilterOptions() {

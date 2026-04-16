@@ -19,7 +19,7 @@ import (
 const (
 	version           = "0.0.1"
 	defaultDBPath     = "dank-data.duckdb"
-	brandsDatabaseURL = "https://github.com/AgentDank/dank-data/raw/main/snapshots/us/ct/2025-04-03/us_ct_brands.duckdb.zst"
+	brandsDatabaseURL = "https://github.com/AgentDank/dank-data/raw/main/snapshots/us/ct/dank-data.duckdb.zst"
 )
 
 var usageFormat = `usage:  %s [--help] [options]
@@ -29,8 +29,8 @@ Browse products by brand, name, cannabis type, or date.
 
 Features:
   - Browse cannabis products with filtering
-  - View product details including cannabinoid profiles
-  - Horizontal bar chart showing top 8 cannabinoids
+  - View product details including compound profiles
+  - Horizontal bar chart showing top 6 compounds
   - Data from dank-data repository (DuckDB format)
   - Automatic download of database if not present
 
@@ -103,7 +103,7 @@ func downloadDatabase(url, targetPath string) error {
 	return nil
 }
 
-// ensureDatabase ensures the database exists and has the brands table
+// ensureDatabase ensures the database exists and has the current brands table.
 func ensureDatabase(dbPath string) error {
 	// If database doesn't exist, download it
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -124,7 +124,7 @@ func ensureDatabase(dbPath string) error {
 	}
 
 	if !hasBrands {
-		fmt.Fprintf(os.Stderr, "brands table not found, downloading fresh database...\n")
+		fmt.Fprintf(os.Stderr, "%s table not found, downloading fresh database...\n", "ct_brands")
 		os.Remove(dbPath)
 		return downloadDatabase(brandsDatabaseURL, dbPath)
 	}
@@ -203,7 +203,7 @@ func main() {
 	}
 
 	// Initialize UI components and BubbleTea program
-	browser := ui.NewProductBrowser(products, brands)
+	browser := ui.NewProductBrowser(products, brands, loader)
 	m := model{
 		browser: browser,
 		loader:  loader,

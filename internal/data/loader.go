@@ -10,6 +10,8 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
+const brandsTableName = "ct_brands"
+
 // Loader handles loading cannabis product data from a DuckDB source
 type Loader struct {
 	dbPath string
@@ -41,7 +43,7 @@ func (l *Loader) Close() error {
 	return nil
 }
 
-// HasBrandsTable checks if the brands_us_ct table exists in the database
+// HasBrandsTable checks if the CT brands table exists in the database.
 func (l *Loader) HasBrandsTable() (bool, error) {
 	if l.db == nil {
 		return false, fmt.Errorf("database not open")
@@ -51,12 +53,12 @@ func (l *Loader) HasBrandsTable() (bool, error) {
 	query := `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables 
-			WHERE table_name = 'brands_us_ct'
+			WHERE table_name = ?
 		)
 	`
-	err := l.db.QueryRow(query).Scan(&exists)
+	err := l.db.QueryRow(query, brandsTableName).Scan(&exists)
 	if err != nil {
-		return false, fmt.Errorf("failed to check for brands_us_ct table: %w", err)
+		return false, fmt.Errorf("failed to check for %s table: %w", brandsTableName, err)
 	}
 	return exists, nil
 }
@@ -71,7 +73,7 @@ func (l *Loader) LoadBrands() ([]models.Brand, error) {
 		SELECT DISTINCT
 			COALESCE(brand_name, 'Unknown') as name,
 			COUNT(*) as count
-		FROM brands_us_ct
+		FROM ct_brands
 		GROUP BY brand_name
 		ORDER BY brand_name
 	`)
@@ -115,7 +117,7 @@ func (l *Loader) LoadProducts() ([]models.Product, error) {
 			approval_date,
 			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
 			COALESCE(cannabidiols_cbd, 0) as cbd
-		FROM brands_us_ct
+		FROM ct_brands
 		ORDER BY brand_name, registration_number
 		LIMIT 1000
 	`)
@@ -140,8 +142,7 @@ func (l *Loader) LoadProducts() ([]models.Product, error) {
 		}
 
 		product.ID = product.RegistrationNumber
-		product.Terpenes = make(map[string]float64)
-		product.Cannabinoids = []models.Cannabinoid{}
+		product.Compounds = []models.Compound{}
 		products = append(products, product)
 	}
 
@@ -163,7 +164,7 @@ func (l *Loader) LoadProductsByBrand(brand string) ([]models.Product, error) {
 			approval_date,
 			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
 			COALESCE(cannabidiols_cbd, 0) as cbd
-		FROM brands_us_ct
+		FROM ct_brands
 		WHERE LOWER(brand_name) = LOWER(?)
 		ORDER BY registration_number
 	`, brand)
@@ -188,8 +189,7 @@ func (l *Loader) LoadProductsByBrand(brand string) ([]models.Product, error) {
 		}
 
 		product.ID = product.RegistrationNumber
-		product.Terpenes = make(map[string]float64)
-		product.Cannabinoids = []models.Cannabinoid{}
+		product.Compounds = []models.Compound{}
 		products = append(products, product)
 	}
 
@@ -211,7 +211,7 @@ func (l *Loader) LoadProductsByType(dosageForm string) ([]models.Product, error)
 			approval_date,
 			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
 			COALESCE(cannabidiols_cbd, 0) as cbd
-		FROM brands_us_ct
+		FROM ct_brands
 		WHERE LOWER(dosage_form) = LOWER(?)
 		ORDER BY brand_name, registration_number
 	`, dosageForm)
@@ -236,8 +236,7 @@ func (l *Loader) LoadProductsByType(dosageForm string) ([]models.Product, error)
 		}
 
 		product.ID = product.RegistrationNumber
-		product.Terpenes = make(map[string]float64)
-		product.Cannabinoids = []models.Cannabinoid{}
+		product.Compounds = []models.Compound{}
 		products = append(products, product)
 	}
 
@@ -252,7 +251,7 @@ func (l *Loader) GetDistinctBrands() ([]string, error) {
 
 	rows, err := l.db.Query(`
 		SELECT DISTINCT COALESCE(brand_name, 'Unknown')
-		FROM brands_us_ct
+		FROM ct_brands
 		ORDER BY brand_name
 	`)
 	if err != nil {
@@ -280,7 +279,7 @@ func (l *Loader) GetDistinctTypes() ([]string, error) {
 
 	rows, err := l.db.Query(`
 		SELECT DISTINCT COALESCE(dosage_form, 'Unknown')
-		FROM brands_us_ct
+		FROM ct_brands
 		ORDER BY dosage_form
 	`)
 	if err != nil {
@@ -300,8 +299,8 @@ func (l *Loader) GetDistinctTypes() ([]string, error) {
 	return types, rows.Err()
 }
 
-// LoadProductWithCannabinoids loads a product and its cannabinoid data
-func (l *Loader) LoadProductWithCannabinoids(registrationNumber string) (*models.Product, error) {
+// LoadProductWithCompounds loads a product and its compound data.
+func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Product, error) {
 	if l.db == nil {
 		return nil, fmt.Errorf("database not open")
 	}
@@ -320,7 +319,7 @@ func (l *Loader) LoadProductWithCannabinoids(registrationNumber string) (*models
 			COALESCE(cannabidiol_acid_cbda, 0) as cbda,
 			COALESCE(market, '') as market,
 			COALESCE(chemotype, '') as chemotype
-		FROM brands_us_ct
+		FROM ct_brands
 		WHERE registration_number = ?
 	`, registrationNumber).Scan(
 		&product.RegistrationNumber,
@@ -345,49 +344,48 @@ func (l *Loader) LoadProductWithCannabinoids(registrationNumber string) (*models
 	}
 
 	product.ID = product.RegistrationNumber
-	product.Terpenes = make(map[string]float64)
-	product.Cannabinoids = []models.Cannabinoid{}
+	product.Compounds = []models.Compound{}
 
-	// Load terpene data
+	// Load additional terpene compounds for the detail pane and chart.
 	cannaRow := l.db.QueryRow(`
 		SELECT
 			COALESCE(a_pinene, 0) as a_pinene,
 			COALESCE(b_myrcene, 0) as b_myrcene,
 			COALESCE(b_caryophyllene, 0) as b_caryophyllene,
 			COALESCE(limonene, 0) as limonene,
-			COALESCE(linalool, 0) as linalool,
-			COALESCE(humulene, 0) as humulene,
+			COALESCE(linalool_lin, 0) as linalool,
+			COALESCE(humulene_hum, 0) as humulene,
 			COALESCE(ocimene, 0) as ocimene,
 			COALESCE(terpinolene, 0) as terpinolene
-		FROM brands_us_ct
+		FROM ct_brands
 		WHERE registration_number = ?
 	`, registrationNumber)
 
 	var aPinene, bMyrcene, bCaryophyllene, limonene, linalool, humulene, ocimene, terpinolene float64
 	if err := cannaRow.Scan(&aPinene, &bMyrcene, &bCaryophyllene, &limonene, &linalool, &humulene, &ocimene, &terpinolene); err == nil {
 		if aPinene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"α-Pinene", aPinene})
+			product.Compounds = append(product.Compounds, models.Compound{"α-Pinene", aPinene})
 		}
 		if bMyrcene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"β-Myrcene", bMyrcene})
+			product.Compounds = append(product.Compounds, models.Compound{"β-Myrcene", bMyrcene})
 		}
 		if bCaryophyllene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"β-Caryophyllene", bCaryophyllene})
+			product.Compounds = append(product.Compounds, models.Compound{"β-Caryophyllene", bCaryophyllene})
 		}
 		if limonene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"Limonene", limonene})
+			product.Compounds = append(product.Compounds, models.Compound{"Limonene", limonene})
 		}
 		if linalool > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"Linalool", linalool})
+			product.Compounds = append(product.Compounds, models.Compound{"Linalool", linalool})
 		}
 		if humulene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"Humulene", humulene})
+			product.Compounds = append(product.Compounds, models.Compound{"Humulene", humulene})
 		}
 		if ocimene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"Ocimene", ocimene})
+			product.Compounds = append(product.Compounds, models.Compound{"Ocimene", ocimene})
 		}
 		if terpinolene > 0 {
-			product.Cannabinoids = append(product.Cannabinoids, models.Cannabinoid{"Terpinolene", terpinolene})
+			product.Compounds = append(product.Compounds, models.Compound{"Terpinolene", terpinolene})
 		}
 	}
 

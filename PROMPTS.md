@@ -21,3 +21,18 @@ go ahead and implement these next steps:
 - Implement DuckDB table existence check
 - Add data loader to query the brands table
 - Build the UI with ProductBrowser component
+
+### 2026-01-09T22:50:00Z - Correct Table Name and Schema
+you are using the table "brands" when it is "us_ct_brands" please correct that and also look at the us_ct_brands table structure
+
+### 2026-01-09T22:55:00Z - Add Horizontal Bar Chart Panel
+now put a panel in the lower right that is a horizontal barchart of the top 6 cannabinoids or terpenes of the selected product. Use NTCharts for this
+
+### 2026-04-16T17:31:18Z - Review Sibling Repos For Latest State
+it's been a while since i've worked on this repo.   look at the ../dank-data and ../dank-extract projects for the latest over there.   then we will work on expanding this demo
+
+### 2026-04-16T17:31:18Z - Sync Demo To Current Data Contract
+yes do that sync-up
+
+### 2026-04-16T17:44:50Z - Commit Cleanup And Sync Work
+ok go ahead and commit that

@@ -15,13 +15,13 @@ A demo application showcasing a product browser for the brands database table.
 **Features:**
 - Product browsing by brand, name, cannabis type, or date
 - Info pane displaying selected product details
-- NTCharts horizontal bar chart showing top 8 cannabinoids for the product
+- NTCharts horizontal bar chart showing the top 6 compounds for the product
 - Data source: [dank-data repository](https://github.com/AgentDank/dank-data)
 
 **Current Dataset:**
-- Database: Connecticut brands (2025-04-03)
+- Database: latest Connecticut cannabis snapshot
 - Format: ZST-compressed DuckDB
-- URL: https://github.com/AgentDank/dank-data/blob/main/snapshots/us/ct/2025-04-03/us_ct_brands.duckdb.zst
+- URL: https://github.com/AgentDank/dank-data/blob/main/snapshots/us/ct/dank-data.duckdb.zst
 
 ## Development
 
