@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/klauspost/compress/zstd"
 	"github.com/spf13/pflag"
 
@@ -62,8 +62,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() string {
-	return m.browser.View()
+func (m model) View() tea.View {
+	v := m.browser.View()
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // downloadDatabase downloads the zstd-compressed DuckDB file and decompresses it
@@ -209,7 +212,7 @@ func main() {
 		loader:  loader,
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
 		os.Exit(1)

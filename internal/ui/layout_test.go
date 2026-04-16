@@ -3,9 +3,9 @@ package ui
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/AgentDank/dank-bubbler/internal/models"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func TestLayoutDimensions(t *testing.T) {
@@ -34,12 +34,12 @@ func TestLayoutDimensions(t *testing.T) {
 
 		view := pb.View()
 
-		actualHeight := lipgloss.Height(view)
-		actualWidth := lipgloss.Width(view)
+		actualHeight := lipgloss.Height(view.Content)
+		actualWidth := lipgloss.Width(view.Content)
 
 		// Check Width
 		if actualWidth > sz.w {
-			t.Logf("Full View:\n%s", view)
+			t.Logf("Full View:\n%s", view.Content)
 			t.Errorf("Window Size: %dx%d. Generated View Width: %d. Overflow: %d", sz.w, sz.h, actualWidth, actualWidth-sz.w)
 
 			// Analyze components to see where the overflow is

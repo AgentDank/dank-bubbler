@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NimbleMarkets/ntcharts/barchart"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/barchart"
 
 	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
@@ -128,10 +128,10 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the product browser
-func (pb *ProductBrowser) View() string {
+func (pb *ProductBrowser) View() tea.View {
 
 	if len(pb.products) == 0 {
-		return "No products loaded. Check your database connection.\n"
+		return tea.NewView("No products loaded. Check your database connection.\n")
 	}
 
 	// Left pane: product list (1/3 width)
@@ -158,11 +158,11 @@ func (pb *ProductBrowser) View() string {
 		rightPane,
 	)
 
-	return lipgloss.JoinVertical(
+	return tea.NewView(lipgloss.JoinVertical(
 		lipgloss.Left,
 		content,
 		helpText,
-	)
+	))
 }
 
 func (pb *ProductBrowser) renderProductList() string {
@@ -442,14 +442,14 @@ func (pb *ProductBrowser) styledLabel(text string) string {
 
 func (pb *ProductBrowser) updateInfoPane() {
 	// Update viewport if needed
-	pb.infoPaneView.Height = pb.height - 3
-	pb.infoPaneView.Width = pb.width / 2
+	pb.infoPaneView.SetHeight(pb.height - 3)
+	pb.infoPaneView.SetWidth(pb.width / 2)
 }
 
 func (pb *ProductBrowser) updateDimensions(width, height int) {
 	pb.width = width
 	pb.height = height
-	pb.infoPaneView = viewport.New(width/2, height-3)
+	pb.infoPaneView = viewport.New(viewport.WithWidth(width/2), viewport.WithHeight(height-3))
 }
 
 // loadSelectedProductDetails enriches the currently selected product with compound data.
