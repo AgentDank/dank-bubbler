@@ -102,7 +102,7 @@ func (l *Loader) LoadBrands() ([]models.Brand, error) {
 	return brands, rows.Err()
 }
 
-// LoadProducts loads all products from the database
+// LoadProducts loads the full browseable product set from the database.
 func (l *Loader) LoadProducts() ([]models.Product, error) {
 	if l.db == nil {
 		return nil, fmt.Errorf("database not open")
@@ -119,7 +119,6 @@ func (l *Loader) LoadProducts() ([]models.Product, error) {
 			COALESCE(cannabidiols_cbd, 0) as cbd
 		FROM ct_brands
 		ORDER BY brand_name, registration_number
-		LIMIT 1000
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query products: %w", err)

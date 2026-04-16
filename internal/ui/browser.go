@@ -18,6 +18,7 @@ import (
 // ProductBrowser is a BubbleTea component for browsing cannabis products
 type ProductBrowser struct {
 	products      []models.Product
+	allProducts   []models.Product
 	brands        []models.Brand
 	selectedIdx   int
 	width         int
@@ -26,8 +27,10 @@ type ProductBrowser struct {
 	filterMode    FilterMode
 	filterOptions []string
 	filterIdx     int
+	filterTitle   string
 	focused       bool
 	loader        *data.Loader
+	activeFilter  string
 }
 
 // FilterMode represents the current filter type
@@ -55,8 +58,10 @@ func (p ProductItem) String() string {
 
 // NewProductBrowser creates a new product browser component
 func NewProductBrowser(products []models.Product, brands []models.Brand, loader *data.Loader) *ProductBrowser {
+	productCopy := append([]models.Product(nil), products...)
 	pb := &ProductBrowser{
-		products:    products,
+		products:    productCopy,
+		allProducts: append([]models.Product(nil), products...),
 		brands:      brands,
 		selectedIdx: 0,
 		focused:     true,
@@ -83,6 +88,10 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		pb.updateDimensions(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
+		if pb.filterMode != FilterModeNone {
+			return pb.updateFilter(msg)
+		}
+
 		switch msg.String() {
 		case "up", "k":
 			if pb.selectedIdx > 0 {
@@ -100,21 +109,24 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "home":
 			pb.selectedIdx = 0
+			pb.loadSelectedProductDetails()
 			pb.updateInfoPane()
 
 		case "end":
 			if len(pb.products) > 0 {
 				pb.selectedIdx = len(pb.products) - 1
+				pb.loadSelectedProductDetails()
 				pb.updateInfoPane()
 			}
 
 		case "b": // Filter by brand
-			pb.filterMode = FilterModeByBrand
-			pb.buildBrandFilterOptions()
+			pb.openFilter(FilterModeByBrand)
 
 		case "t": // Filter by type
-			pb.filterMode = FilterModeByType
-			pb.buildTypeFilterOptions()
+			pb.openFilter(FilterModeByType)
+
+		case "c":
+			pb.clearFilter()
 
 		case "f": // Toggle focused mode
 			pb.focused = !pb.focused
@@ -179,27 +191,41 @@ func (pb *ProductBrowser) renderProductList() string {
 		listHeight = 0
 	}
 
-	var lines []string
-	lines = append(lines, pb.styledHeader("Products"))
+	if pb.filterMode != FilterModeNone {
+		return pb.renderFilterList(listWidth, listHeight)
+	}
 
-	for i, product := range pb.products {
-		if i >= listHeight-1 {
-			break
-		}
+	var lines []string
+	header := "Products"
+	if label := pb.currentFilterLabel(); label != "" {
+		header = fmt.Sprintf("%s [%s]", header, label)
+	}
+	lines = append(lines, pb.styledHeader(header))
+
+	rowsAvailable := max(listHeight-1, 0)
+	start := listStart(pb.selectedIdx, len(pb.products), rowsAvailable)
+
+	for i := start; i < len(pb.products) && i < start+rowsAvailable; i++ {
+		product := pb.products[i]
 
 		prefix := "  "
 		if i == pb.selectedIdx {
 			prefix = "> "
 		}
 
-		line := fmt.Sprintf("%s%-*s", prefix, listWidth-3, product.BrandName)
+		label := fmt.Sprintf("%s (%s)", product.BrandName, product.DosageForm)
+		line := fmt.Sprintf("%s%-*s", prefix, max(listWidth-3, 0), label)
 		if len(line) > listWidth {
 			line = line[:listWidth]
 		}
 		lines = append(lines, line)
 	}
 
-	for i := len(pb.products); i < listHeight-1; i++ {
+	if len(pb.products) == 0 {
+		lines = append(lines, "  No matching products")
+	}
+
+	for i := len(lines); i < listHeight; i++ {
 		lines = append(lines, strings.Repeat(" ", listWidth))
 	}
 
@@ -419,7 +445,13 @@ func (pb *ProductBrowser) renderCompoundsChart() string {
 }
 
 func (pb *ProductBrowser) renderHelp() string {
-	help := "↑/k: up  ↓/j: down  b: filter by brand  t: filter by type  f: toggle focus  q: quit"
+	help := "↑/k: up  ↓/j: down  b: filter by brand  t: filter by type  c: clear filter  f: toggle focus  q: quit"
+	if pb.filterMode != FilterModeNone {
+		help = "↑/k: up  ↓/j: down  enter: apply filter  esc: cancel  q: quit"
+	}
+	if label := pb.currentFilterLabel(); label != "" {
+		help += "  active: " + label
+	}
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")).
 		Padding(0, 1).
@@ -467,22 +499,267 @@ func (pb *ProductBrowser) loadSelectedProductDetails() {
 	}
 }
 
-func (pb *ProductBrowser) buildBrandFilterOptions() {
-	brandMap := make(map[string]bool)
-	for _, p := range pb.products {
-		brandMap[p.BrandName] = true
+func (pb *ProductBrowser) openFilter(mode FilterMode) {
+	var err error
+	pb.filterMode = mode
+	pb.filterIdx = 0
+	pb.filterOptions = nil
+
+	switch mode {
+	case FilterModeByBrand:
+		pb.filterTitle = "Filter By Brand"
+		err = pb.buildBrandFilterOptions()
+	case FilterModeByType:
+		pb.filterTitle = "Filter By Type"
+		err = pb.buildTypeFilterOptions()
+	default:
+		pb.filterMode = FilterModeNone
+		return
+	}
+
+	if err != nil || len(pb.filterOptions) == 0 {
+		pb.filterMode = FilterModeNone
+		pb.filterTitle = ""
+		pb.filterOptions = nil
+		pb.filterIdx = 0
+	}
+}
+
+func (pb *ProductBrowser) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if pb.filterIdx > 0 {
+			pb.filterIdx--
+		}
+	case "down", "j":
+		if pb.filterIdx < len(pb.filterOptions)-1 {
+			pb.filterIdx++
+		}
+	case "home":
+		pb.filterIdx = 0
+	case "end":
+		if len(pb.filterOptions) > 0 {
+			pb.filterIdx = len(pb.filterOptions) - 1
+		}
+	case "enter":
+		pb.applySelectedFilter()
+	case "esc":
+		pb.cancelFilter()
+	case "ctrl+c", "q":
+		return pb, tea.Quit
+	}
+
+	return pb, nil
+}
+
+func (pb *ProductBrowser) renderFilterList(listWidth, listHeight int) string {
+	var lines []string
+	lines = append(lines, pb.styledHeader(pb.filterTitle))
+
+	rowsAvailable := max(listHeight-1, 0)
+	start := listStart(pb.filterIdx, len(pb.filterOptions), rowsAvailable)
+
+	for i := start; i < len(pb.filterOptions) && i < start+rowsAvailable; i++ {
+		prefix := "  "
+		if i == pb.filterIdx {
+			prefix = "> "
+		}
+
+		line := fmt.Sprintf("%s%-*s", prefix, max(listWidth-3, 0), pb.filterOptions[i])
+		if len(line) > listWidth {
+			line = line[:listWidth]
+		}
+		lines = append(lines, line)
+	}
+
+	if len(pb.filterOptions) == 0 {
+		lines = append(lines, "  No options available")
+	}
+
+	for i := len(lines); i < listHeight; i++ {
+		lines = append(lines, strings.Repeat(" ", listWidth))
+	}
+
+	content := strings.Join(lines, "\n")
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("4")).
+		Width(listWidth).
+		Height(listHeight).
+		Padding(0, 1).
+		Render(content)
+}
+
+func (pb *ProductBrowser) applySelectedFilter() {
+	if pb.filterIdx < 0 || pb.filterIdx >= len(pb.filterOptions) {
+		pb.cancelFilter()
+		return
+	}
+
+	mode := pb.filterMode
+	value := pb.filterOptions[pb.filterIdx]
+	pb.cancelFilter()
+
+	var (
+		products []models.Product
+		err      error
+	)
+	switch mode {
+	case FilterModeByBrand:
+		products, err = pb.loadProductsByBrand(value)
+	case FilterModeByType:
+		products, err = pb.loadProductsByType(value)
+	default:
+		return
+	}
+
+	if err != nil {
+		return
+	}
+
+	pb.products = products
+	pb.selectedIdx = 0
+	pb.activeFilter = pb.filterLabel(mode, value)
+	if len(pb.products) > 0 {
+		pb.loadSelectedProductDetails()
+	}
+	pb.updateInfoPane()
+}
+
+func (pb *ProductBrowser) cancelFilter() {
+	pb.filterMode = FilterModeNone
+	pb.filterOptions = nil
+	pb.filterIdx = 0
+	pb.filterTitle = ""
+}
+
+func (pb *ProductBrowser) clearFilter() {
+	pb.cancelFilter()
+	pb.activeFilter = ""
+	pb.products = append([]models.Product(nil), pb.allProducts...)
+	pb.selectedIdx = 0
+	if len(pb.products) > 0 {
+		pb.loadSelectedProductDetails()
+	}
+	pb.updateInfoPane()
+}
+
+func (pb *ProductBrowser) currentFilterLabel() string {
+	return pb.activeFilter
+}
+
+func (pb *ProductBrowser) filterLabel(mode FilterMode, value string) string {
+	switch mode {
+	case FilterModeByBrand:
+		return "brand: " + value
+	case FilterModeByType:
+		return "type: " + value
+	case FilterModeByDate:
+		return "date: " + value
+	default:
+		return value
+	}
+}
+
+func (pb *ProductBrowser) buildBrandFilterOptions() error {
+	if pb.loader != nil {
+		options, err := pb.loader.GetDistinctBrands()
+		if err != nil {
+			return err
+		}
+		pb.filterOptions = options
+		pb.preselectActiveFilter(FilterModeByBrand)
+		return nil
+	}
+
+	brandMap := make(map[string]struct{})
+	for _, p := range pb.allProducts {
+		brandMap[p.BrandName] = struct{}{}
 	}
 	for brand := range brandMap {
 		pb.filterOptions = append(pb.filterOptions, brand)
 	}
+	sort.Strings(pb.filterOptions)
+	pb.preselectActiveFilter(FilterModeByBrand)
+	return nil
 }
 
-func (pb *ProductBrowser) buildTypeFilterOptions() {
-	typeMap := make(map[string]bool)
-	for _, p := range pb.products {
-		typeMap[p.DosageForm] = true
+func (pb *ProductBrowser) buildTypeFilterOptions() error {
+	if pb.loader != nil {
+		options, err := pb.loader.GetDistinctTypes()
+		if err != nil {
+			return err
+		}
+		pb.filterOptions = options
+		pb.preselectActiveFilter(FilterModeByType)
+		return nil
+	}
+
+	typeMap := make(map[string]struct{})
+	for _, p := range pb.allProducts {
+		typeMap[p.DosageForm] = struct{}{}
 	}
 	for t := range typeMap {
 		pb.filterOptions = append(pb.filterOptions, t)
 	}
+	sort.Strings(pb.filterOptions)
+	pb.preselectActiveFilter(FilterModeByType)
+	return nil
+}
+
+func (pb *ProductBrowser) preselectActiveFilter(mode FilterMode) {
+	wantPrefix := ""
+	switch mode {
+	case FilterModeByBrand:
+		wantPrefix = "brand: "
+	case FilterModeByType:
+		wantPrefix = "type: "
+	}
+
+	if wantPrefix == "" || !strings.HasPrefix(pb.activeFilter, wantPrefix) {
+		return
+	}
+
+	currentValue := strings.TrimPrefix(pb.activeFilter, wantPrefix)
+	for i, option := range pb.filterOptions {
+		if option == currentValue {
+			pb.filterIdx = i
+			return
+		}
+	}
+}
+
+func (pb *ProductBrowser) loadProductsByBrand(brand string) ([]models.Product, error) {
+	if pb.loader != nil {
+		return pb.loader.LoadProductsByBrand(brand)
+	}
+
+	var products []models.Product
+	for _, product := range pb.allProducts {
+		if strings.EqualFold(product.BrandName, brand) {
+			products = append(products, product)
+		}
+	}
+	return products, nil
+}
+
+func (pb *ProductBrowser) loadProductsByType(productType string) ([]models.Product, error) {
+	if pb.loader != nil {
+		return pb.loader.LoadProductsByType(productType)
+	}
+
+	var products []models.Product
+	for _, product := range pb.allProducts {
+		if strings.EqualFold(product.DosageForm, productType) {
+			products = append(products, product)
+		}
+	}
+	return products, nil
+}
+
+func listStart(selectedIdx, totalItems, visibleRows int) int {
+	if visibleRows <= 0 || totalItems <= visibleRows || selectedIdx < visibleRows {
+		return 0
+	}
+	return selectedIdx - visibleRows + 1
 }
