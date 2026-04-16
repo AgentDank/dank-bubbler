@@ -27,7 +27,7 @@ func NewLoader(dbPath string) *Loader {
 
 // Open opens the database connection
 func (l *Loader) Open() error {
-	db, err := sql.Open("duckdb", l.dbPath)
+	db, err := sql.Open("duckdb", l.dbPath+"?access_mode=read_only")
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
