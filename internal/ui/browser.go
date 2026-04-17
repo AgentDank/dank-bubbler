@@ -112,6 +112,7 @@ func (km browserHelpKeyMap) ShortHelp() []key.Binding {
 
 	return []key.Binding{
 		moveKey,
+		pagesKey,
 		quitKey,
 		brandFilterKey,
 		nameFilterKey,
@@ -126,7 +127,7 @@ func (km browserHelpKeyMap) FullHelp() [][]key.Binding {
 		return [][]key.Binding{{moveKey, applyFilterKey, cancelFilterKey, quitKey}}
 	}
 
-	return [][]key.Binding{{moveKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
+	return [][]key.Binding{{moveKey, pagesKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
 }
 
 func (p ProductItem) FilterValue() string {

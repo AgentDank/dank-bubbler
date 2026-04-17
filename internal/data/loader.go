@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 
@@ -495,4 +496,85 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 	}
 
 	return &product, nil
+}
+
+// LoadTaxHistory returns monthly tax rows with period_end_date in [start, end],
+// ordered chronologically. A zero start or end is treated as unbounded.
+func (l *Loader) LoadTaxHistory(start, end time.Time) ([]models.TaxRecord, error) {
+	if l.db == nil {
+		return nil, fmt.Errorf("database not open")
+	}
+	rows, err := l.db.Query(`
+		SELECT period_end_date,
+		       COALESCE(plant_material_tax, 0),
+		       COALESCE(edible_products_tax, 0),
+		       COALESCE(other_cannabis_tax, 0),
+		       COALESCE(total_tax, 0)
+		FROM ct_tax
+		WHERE (? IS NULL OR period_end_date >= ?)
+		  AND (? IS NULL OR period_end_date <= ?)
+		ORDER BY period_end_date
+	`, nullableTime(start), nullableTime(start), nullableTime(end), nullableTime(end))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tax: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.TaxRecord
+	for rows.Next() {
+		var r models.TaxRecord
+		if err := rows.Scan(&r.PeriodEnd, &r.PlantMaterialTax, &r.EdibleProductsTax, &r.OtherCannabisTax, &r.TotalTax); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// LoadSalesHistory returns weekly sales rows with week_ending in [start, end],
+// ordered chronologically. A zero start or end is treated as unbounded.
+func (l *Loader) LoadSalesHistory(start, end time.Time) ([]models.SalesRecord, error) {
+	if l.db == nil {
+		return nil, fmt.Errorf("database not open")
+	}
+	rows, err := l.db.Query(`
+		SELECT week_ending,
+		       COALESCE(adult_use, 0),
+		       COALESCE(medical, 0),
+		       COALESCE(total, 0),
+		       COALESCE(adult_use_products_sold, 0),
+		       COALESCE(medical_products_sold, 0),
+		       COALESCE(total_products_sold, 0),
+		       COALESCE(adult_use_avg_price, 0),
+		       COALESCE(medical_avg_price, 0)
+		FROM ct_weekly_sales
+		WHERE (? IS NULL OR week_ending >= ?)
+		  AND (? IS NULL OR week_ending <= ?)
+		ORDER BY week_ending
+	`, nullableTime(start), nullableTime(start), nullableTime(end), nullableTime(end))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sales: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.SalesRecord
+	for rows.Next() {
+		var r models.SalesRecord
+		if err := rows.Scan(
+			&r.WeekEnding, &r.AdultUse, &r.Medical, &r.Total,
+			&r.AdultUseProductsSold, &r.MedicalProductsSold, &r.TotalProductsSold,
+			&r.AdultUseAvgPrice, &r.MedicalAvgPrice,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func nullableTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }

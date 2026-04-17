@@ -35,3 +35,25 @@ type Brand struct {
 	Description  string
 	ProductCount int
 }
+
+// TaxRecord is a monthly cannabis tax-revenue row from ct_tax.
+type TaxRecord struct {
+	PeriodEnd         time.Time
+	PlantMaterialTax  float64
+	EdibleProductsTax float64
+	OtherCannabisTax  float64
+	TotalTax          float64
+}
+
+// SalesRecord is a weekly retail sales row from ct_weekly_sales.
+type SalesRecord struct {
+	WeekEnding           time.Time
+	AdultUse             float64
+	Medical              float64
+	Total                float64
+	AdultUseProductsSold int
+	MedicalProductsSold  int
+	TotalProductsSold    int
+	AdultUseAvgPrice     float64
+	MedicalAvgPrice      float64
+}

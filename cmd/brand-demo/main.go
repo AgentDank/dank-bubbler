@@ -40,30 +40,21 @@ Example:  $ db-brand-demo
 `
 
 type model struct {
-	browser *ui.ProductBrowser
-	loader  *data.Loader
+	app    *ui.AppModel
+	loader *data.Loader
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return m.app.Init()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	browserModel, cmd := m.browser.Update(msg)
-	m.browser = browserModel.(*ui.ProductBrowser)
-
-	switch msg.(type) {
-	case tea.KeyMsg:
-		// Key handling is done in ProductBrowser.Update()
-	case tea.WindowSizeMsg:
-		// Window handling is done in ProductBrowser.Update()
-	}
-
+	_, cmd := m.app.Update(msg)
 	return m, cmd
 }
 
 func (m model) View() tea.View {
-	v := m.browser.View()
+	v := m.app.View()
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
@@ -206,10 +197,9 @@ func main() {
 	}
 
 	// Initialize UI components and BubbleTea program
-	browser := ui.NewProductBrowser(products, brands, loader)
 	m := model{
-		browser: browser,
-		loader:  loader,
+		app:    ui.NewAppModel(products, brands, loader),
+		loader: loader,
 	}
 
 	p := tea.NewProgram(m)
