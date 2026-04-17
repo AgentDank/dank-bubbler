@@ -521,9 +521,15 @@ func (pb *ProductBrowser) renderBarChartBox(outerWidth, outerHeight int, entries
 	if innerWidth >= 12 && innerHeight >= 4 {
 		axisStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 		labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+		// Size the canvas to exactly what the bars need so the axis line
+		// doesn't extend below the last bar.
+		chartHeight := max(min(len(entries)*2-1, innerHeight), 1)
 		chart := barchart.New(
 			max(innerWidth, 1),
-			max(innerHeight, 1),
+			chartHeight,
+			barchart.WithNoAutoBarWidth(),
+			barchart.WithBarWidth(1),
+			barchart.WithBarGap(1),
 			barchart.WithMaxValue(maxVal),
 			barchart.WithStyles(axisStyle, labelStyle),
 			barchart.WithDataSet(barData),
