@@ -15,7 +15,8 @@ type Product struct {
 	THCA                float64    // tetrahydrocannabinol_acid_thca
 	CBD                 float64    // cannabidiols_cbd
 	CBDA                float64    // cannabidiol_acid_cbda
-	Compounds           []Compound // Top cannabinoids and terpenes (derived)
+	OtherCannabinoids   []Compound // Cannabinoids beyond THC/CBD/THCA/CBDA
+	Compounds           []Compound // Terpenes (derived)
 	Market              string     // market (e.g., "CT")
 	Chemotype           string     // chemotype
 	ProcessingTechnique string     // processing_technique

@@ -4,6 +4,7 @@ package data
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 
@@ -429,11 +430,18 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 	}
 
 	product.ID = product.RegistrationNumber
+	product.OtherCannabinoids = []models.Compound{}
 	product.Compounds = []models.Compound{}
 
-	// Load additional terpene compounds for the detail pane and chart.
+	// Load additional cannabinoids and terpenes for the detail pane and chart.
 	cannaRow := l.db.QueryRow(`
 		SELECT
+			COALESCE(cannabichromene_cbc, 0) as cbc,
+			COALESCE(cannbinol_cbn, 0) as cbn,
+			COALESCE(cbg, 0) as cbg,
+			COALESCE(cbg_a, 0) as cbga,
+			COALESCE(cannabavarin_cbdv, 0) as cbdv,
+			COALESCE(tetrahydrocannabivarin_thcv, 0) as thcv,
 			COALESCE(a_pinene, 0) as a_pinene,
 			COALESCE(b_myrcene, 0) as b_myrcene,
 			COALESCE(b_caryophyllene, 0) as b_caryophyllene,
@@ -446,32 +454,44 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 		WHERE registration_number = ?
 	`, registrationNumber)
 
+	var cbc, cbn, cbg, cbga, cbdv, thcv float64
 	var aPinene, bMyrcene, bCaryophyllene, limonene, linalool, humulene, ocimene, terpinolene float64
-	if err := cannaRow.Scan(&aPinene, &bMyrcene, &bCaryophyllene, &limonene, &linalool, &humulene, &ocimene, &terpinolene); err == nil {
-		if aPinene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "α-Pinene", Percentage: aPinene})
+	if err := cannaRow.Scan(
+		&cbc, &cbn, &cbg, &cbga, &cbdv, &thcv,
+		&aPinene, &bMyrcene, &bCaryophyllene, &limonene, &linalool, &humulene, &ocimene, &terpinolene,
+	); err == nil {
+		addCann := func(name string, v float64) {
+			if v > 0 {
+				product.OtherCannabinoids = append(product.OtherCannabinoids, models.Compound{Name: name, Percentage: v})
+			}
 		}
-		if bMyrcene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "β-Myrcene", Percentage: bMyrcene})
+		addCann("CBC", cbc)
+		addCann("CBN", cbn)
+		addCann("CBG", cbg)
+		addCann("CBGA", cbga)
+		addCann("CBDV", cbdv)
+		addCann("THCV", thcv)
+
+		addTerp := func(name string, v float64) {
+			if v > 0 {
+				product.Compounds = append(product.Compounds, models.Compound{Name: name, Percentage: v})
+			}
 		}
-		if bCaryophyllene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "β-Caryophyllene", Percentage: bCaryophyllene})
-		}
-		if limonene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "Limonene", Percentage: limonene})
-		}
-		if linalool > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "Linalool", Percentage: linalool})
-		}
-		if humulene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "Humulene", Percentage: humulene})
-		}
-		if ocimene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "Ocimene", Percentage: ocimene})
-		}
-		if terpinolene > 0 {
-			product.Compounds = append(product.Compounds, models.Compound{Name: "Terpinolene", Percentage: terpinolene})
-		}
+		addTerp("α-Pinene", aPinene)
+		addTerp("β-Myrcene", bMyrcene)
+		addTerp("β-Caryophyllene", bCaryophyllene)
+		addTerp("Limonene", limonene)
+		addTerp("Linalool", linalool)
+		addTerp("Humulene", humulene)
+		addTerp("Ocimene", ocimene)
+		addTerp("Terpinolene", terpinolene)
+
+		sort.Slice(product.OtherCannabinoids, func(i, j int) bool {
+			return product.OtherCannabinoids[i].Percentage > product.OtherCannabinoids[j].Percentage
+		})
+		sort.Slice(product.Compounds, func(i, j int) bool {
+			return product.Compounds[i].Percentage > product.Compounds[j].Percentage
+		})
 	}
 
 	return &product, nil

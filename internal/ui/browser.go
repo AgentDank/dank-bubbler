@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/barchart"
+	"github.com/NimbleMarkets/ntcharts/v2/canvas"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AgentDank/dank-bubbler/internal/data"
@@ -196,6 +197,33 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		pb.height = msg.Height
 		pb.updateDimensions(msg.Width, msg.Height)
 
+	case tea.MouseWheelMsg:
+		m := msg.Mouse()
+		leftWidth, _ := pb.paneWidths()
+		if m.X < 0 || m.X >= leftWidth {
+			return pb, nil
+		}
+		oldIndex := pb.leftList.Index()
+		switch m.Button {
+		case tea.MouseWheelUp:
+			pb.leftList.CursorUp()
+		case tea.MouseWheelDown:
+			pb.leftList.CursorDown()
+		default:
+			return pb, nil
+		}
+		newIndex := pb.leftList.Index()
+		if newIndex != oldIndex {
+			if pb.filterMode == FilterModeNone {
+				pb.selectedIdx = newIndex
+				pb.loadSelectedProductDetails()
+				pb.updateInfoPane()
+			} else {
+				pb.filterIdx = newIndex
+			}
+		}
+		return pb, nil
+
 	case tea.KeyMsg:
 		if pb.filterMode != FilterModeNone {
 			return pb.updateFilter(msg)
@@ -256,9 +284,17 @@ func (pb *ProductBrowser) View() tea.View {
 	// Left pane: product list (1/3 width)
 	leftPane := pb.renderProductList(leftWidth, middleHeight)
 
-	// Right panes: top and bottom
+	// Right panes: top info, bottom split into cannabinoids + terpenes
 	rightTopPane := pb.renderInfoPane(rightWidth, topHeight)
-	rightBottomPane := pb.renderCompoundsChart(rightWidth, bottomHeight)
+	cannabinoidsWidth := rightWidth / 2
+	terpenesWidth := rightWidth - cannabinoidsWidth
+	cannabinoidsPane := pb.renderCannabinoidsChart(cannabinoidsWidth, bottomHeight)
+	terpenesPane := pb.renderTerpenesChart(terpenesWidth, bottomHeight)
+	rightBottomPane := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		cannabinoidsPane,
+		terpenesPane,
+	)
 
 	// Combine right panes vertically
 	rightPane := lipgloss.JoinVertical(
@@ -297,6 +333,7 @@ func (pb *ProductBrowser) renderProductList(outerWidth, outerHeight int) string 
 
 func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 	style := pb.infoPaneStyle()
+	innerHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
 
 	if len(pb.products) == 0 {
 		return style.
@@ -360,109 +397,182 @@ func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 	}
 
 	content := info.String()
+	if innerHeight > 0 {
+		lines := strings.Split(content, "\n")
+		if len(lines) > innerHeight {
+			lines = lines[:innerHeight]
+			content = strings.Join(lines, "\n")
+		}
+	}
 	return style.
 		Width(outerWidth).
 		Height(outerHeight).
 		Render(content)
 }
 
-func (pb *ProductBrowser) renderCompoundsChart(outerWidth, outerHeight int) string {
+type barEntry struct {
+	name  string
+	value float64
+}
+
+func (pb *ProductBrowser) renderCannabinoidsChart(outerWidth, outerHeight int) string {
+	style := pb.chartPaneStyle()
+	if len(pb.products) == 0 {
+		return style.Width(outerWidth).Height(outerHeight).Render("No product selected")
+	}
+
+	product := pb.products[pb.selectedIdx]
+	var entries []barEntry
+	addFixed := func(name string, v float64) {
+		if v > 0 {
+			entries = append(entries, barEntry{name, v})
+		}
+	}
+	addFixed("THC", product.THC)
+	addFixed("CBD", product.CBD)
+	addFixed("THCA", product.THCA)
+	addFixed("CBDA", product.CBDA)
+
+	others := make([]barEntry, 0, len(product.OtherCannabinoids))
+	for _, c := range product.OtherCannabinoids {
+		if c.Percentage > 0 {
+			others = append(others, barEntry{c.Name, c.Percentage})
+		}
+	}
+	sort.Slice(others, func(i, j int) bool {
+		return others[i].value > others[j].value
+	})
+	if len(others) > 20 {
+		others = others[:20]
+	}
+	entries = append(entries, others...)
+
+	return pb.renderBarChartBox(outerWidth, outerHeight, entries, "No cannabinoid data available")
+}
+
+func (pb *ProductBrowser) renderTerpenesChart(outerWidth, outerHeight int) string {
+	style := pb.chartPaneStyle()
+	if len(pb.products) == 0 {
+		return style.Width(outerWidth).Height(outerHeight).Render("No product selected")
+	}
+
+	product := pb.products[pb.selectedIdx]
+	entries := make([]barEntry, 0, len(product.Compounds))
+	for _, c := range product.Compounds {
+		if c.Percentage > 0 {
+			entries = append(entries, barEntry{c.Name, c.Percentage})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].value > entries[j].value
+	})
+	if len(entries) > 20 {
+		entries = entries[:20]
+	}
+
+	// Normalize every terpene label to the visual width of the longest name
+	// ("β-Caryophyllene" = 15 cells) so the axis position is stable regardless
+	// of which terpenes are present.
+	const terpLabelWidth = 15
+	for i, e := range entries {
+		w := lipgloss.Width(e.name)
+		switch {
+		case w > terpLabelWidth:
+			entries[i].name = ansi.Truncate(e.name, terpLabelWidth, "")
+		case w < terpLabelWidth:
+			entries[i].name = e.name + strings.Repeat(" ", terpLabelWidth-w)
+		}
+	}
+
+	return pb.renderBarChartBox(outerWidth, outerHeight, entries, "No terpene data available")
+}
+
+func (pb *ProductBrowser) renderBarChartBox(outerWidth, outerHeight int, entries []barEntry, emptyMsg string) string {
 	style := pb.chartPaneStyle()
 	innerWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
 	innerHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
 
-	if len(pb.products) == 0 {
-		return style.
-			Width(outerWidth).
-			Height(outerHeight).
-			Render("No product selected")
+	if len(entries) == 0 {
+		return style.Width(outerWidth).Height(outerHeight).Render(emptyMsg)
 	}
 
-	product := pb.products[pb.selectedIdx]
-
-	// Collect cannabinoids and terpenes with their percentages
-	type compound struct {
-		name  string
-		value float64
+	maxBars := (innerHeight + 1) / 2
+	if maxBars > 0 && len(entries) > maxBars {
+		entries = entries[:maxBars]
 	}
 
-	var compounds []compound
-
-	// Add main cannabinoids
-	if product.THC > 0 {
-		compounds = append(compounds, compound{"THC", product.THC})
-	}
-	if product.THCA > 0 {
-		compounds = append(compounds, compound{"THCA", product.THCA})
-	}
-	if product.CBD > 0 {
-		compounds = append(compounds, compound{"CBD", product.CBD})
-	}
-	if product.CBDA > 0 {
-		compounds = append(compounds, compound{"CBDA", product.CBDA})
-	}
-
-	// Add terpenes from the selected product's derived compounds list.
-	for _, c := range product.Compounds {
-		compounds = append(compounds, compound{c.Name, c.Percentage})
-	}
-
-	if len(compounds) == 0 {
-		return style.
-			Width(outerWidth).
-			Height(outerHeight).
-			Render("No compound data available")
-	}
-
-	// Sort by value descending and keep top 6
-	sort.Slice(compounds, func(i, j int) bool {
-		return compounds[i].value > compounds[j].value
-	})
-
-	if len(compounds) > 6 {
-		compounds = compounds[:6]
-	}
-
-	// Get max value for scaling
 	var maxVal float64
-	for _, c := range compounds {
-		if c.value > maxVal {
-			maxVal = c.value
+	for _, e := range entries {
+		if e.value > maxVal {
+			maxVal = e.value
 		}
 	}
 
-	// Create bar chart data
-	var barData []barchart.BarData
-	for _, c := range compounds {
+	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Background(lipgloss.Color("46"))
+	barData := make([]barchart.BarData, 0, len(entries))
+	for _, e := range entries {
 		barData = append(barData, barchart.BarData{
-			Label: c.name,
-			Values: []barchart.BarValue{
-				{
-					Name:  c.name,
-					Value: c.value,
-					Style: lipgloss.NewStyle().Foreground(lipgloss.Color("46")),
-				},
-			},
+			Label: e.name,
+			Values: []barchart.BarValue{{Name: e.name, Value: e.value, Style: barStyle}},
 		})
 	}
 
-	// Create and configure the chart
 	content := "Window too small for chart"
 	if innerWidth >= 12 && innerHeight >= 4 {
+		axisStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+		labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
 		chart := barchart.New(
 			max(innerWidth, 1),
 			max(innerHeight, 1),
-			barchart.WithHorizontalBars(),
 			barchart.WithMaxValue(maxVal),
+			barchart.WithStyles(axisStyle, labelStyle),
 			barchart.WithDataSet(barData),
+			barchart.WithHorizontalBars(),
 		)
+		chart.Draw()
+
+		// ntcharts uses byte length to set origin.X (the axis column), so mirror
+		// that here — otherwise multi-byte labels like β-Caryophyllene put the
+		// overlay one column too far left.
+		maxLabelLen := 0
+		for _, e := range entries {
+			if n := len(e.name); n > maxLabelLen {
+				maxLabelLen = n
+			}
+		}
+		barStartX := maxLabelLen + 1
+		barMaxCells := max(innerWidth-barStartX, 0)
+		// Inside the bar: dark text on the bar's green so it reads on the filled block.
+		onBarStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("46")).
+			Bold(true)
+		// Past the bar end: green text on the terminal default so it stays
+		// readable on dark and light terminals (no fixed background).
+		offBarStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("46")).
+			Bold(true)
+		rowStride := chart.BarWidth() + chart.BarGap()
+		for i, e := range entries {
+			text := fmt.Sprintf("%.2f%%", e.value)
+			cells := 0
+			if maxVal > 0 {
+				cells = int(e.value / maxVal * float64(barMaxCells))
+			}
+			y := i * rowStride
+			inside := min(cells, len(text))
+			if inside > 0 {
+				chart.Canvas.SetStringWithStyle(canvas.Point{X: barStartX, Y: y}, text[:inside], onBarStyle)
+			}
+			if inside < len(text) {
+				chart.Canvas.SetStringWithStyle(canvas.Point{X: barStartX + inside, Y: y}, text[inside:], offBarStyle)
+			}
+		}
+
 		content = chart.View()
 	}
 
-	return style.
-		Width(outerWidth).
-		Height(outerHeight).
-		Render(content)
+	return style.Width(outerWidth).Height(outerHeight).Render(content)
 }
 
 func (pb *ProductBrowser) renderHeader() string {
