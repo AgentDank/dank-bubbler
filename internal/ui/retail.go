@@ -313,3 +313,93 @@ func (r *RetailBrowser) renderHelp() string {
 		Foreground(lipgloss.Color("252")).
 		Render(helpText)
 }
+
+func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		r.width = msg.Width
+		r.height = msg.Height
+		r.help.SetWidth(msg.Width)
+
+		detailH := 2
+		bodyH := max(r.height-1-detailH-1, 4)
+		listW := max(r.width*2/5, 30)
+		mapW := r.width - listW
+
+		r.tbl.SetHeight(max(bodyH-4, 3))
+		businessW := max(listW-5-12-2, 10) // total minus borders, city col, type col, padding
+		r.tbl.SetColumns([]table.Column{
+			{Title: "Business", Width: businessW},
+			{Title: "City", Width: 12},
+			{Title: "Type", Width: 5},
+		})
+
+		r.mv.Width = max(mapW-2, 20)
+		r.mv.Height = max(bodyH-2, 4)
+		// Trigger a re-render at the new size by nudging via the current center.
+		cmd := r.centerMapOnSelectionIfChanged(true)
+		return r, cmd
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "tab":
+			if r.focus == focusList {
+				r.focus = focusMap
+			} else {
+				r.focus = focusList
+			}
+			return r, nil
+		case "t":
+			r.typeFilter = (r.typeFilter + 1) % 4
+			r.recompute()
+			return r, r.centerMapOnSelectionIfChanged(true)
+		case "o":
+			if r.sortBy == retailSortBusiness {
+				r.sortBy = retailSortCity
+			} else {
+				r.sortBy = retailSortBusiness
+			}
+			r.recompute()
+			return r, r.centerMapOnSelectionIfChanged(true)
+		case "ctrl+c", "q":
+			return r, tea.Quit
+		}
+	}
+
+	// Route remaining messages based on focus.
+	switch r.focus {
+	case focusMap:
+		var cmd tea.Cmd
+		r.mv, cmd = r.mv.Update(msg)
+		return r, cmd
+	default: // focusList
+		var cmd tea.Cmd
+		r.tbl, cmd = r.tbl.Update(msg)
+		recenterCmd := r.centerMapOnSelectionIfChanged(false)
+		return r, tea.Batch(cmd, recenterCmd)
+	}
+}
+
+// centerMapOnSelectionIfChanged re-centers the map on the currently-selected
+// row when the selection index has changed since the last call (or when
+// forced). Returns the tea.Cmd mapview emits for its tile fetch.
+func (r *RetailBrowser) centerMapOnSelectionIfChanged(force bool) tea.Cmd {
+	loc, ok := r.selectedLocation()
+	if !ok {
+		return nil
+	}
+	idx := r.tbl.Cursor()
+	if !force && idx == r.lastSelected {
+		return nil
+	}
+	r.lastSelected = idx
+	if loc.Latitude == 0 && loc.Longitude == 0 {
+		return nil
+	}
+	r.mv.SetLatLng(loc.Latitude, loc.Longitude, 12)
+	// mapview renders lazily via its own Update path. Force a render by
+	// sending a MapCoordinates message through its Update loop.
+	var cmd tea.Cmd
+	r.mv, cmd = r.mv.Update(mapview.MapCoordinates{Lat: loc.Latitude, Lng: loc.Longitude})
+	return cmd
+}
