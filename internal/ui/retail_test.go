@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -66,5 +67,46 @@ func TestFormatRetailDetailBarOmitsEmptyFields(t *testing.T) {
 	// line2 should not be just separators
 	if strings.Count(line2, "—") > 1 {
 		t.Errorf("line2 should collapse empty fields, got %q", line2)
+	}
+}
+
+func TestRecomputeRetail(t *testing.T) {
+	all := []models.RetailLocation{
+		{Business: "ACME", City: "Hartford", Type: "Hybrid Retailer"},
+		{Business: "Best", City: "Bristol", Type: "Adult-Use Cannabis Only"},
+		{Business: "Carlos", City: "Bristol", Type: "Hybrid Retailer"},
+		{Business: "Delta", City: "Ansonia", Type: "Medical Marijuana Only"},
+		{Business: "Echo", City: "Ansonia", Type: "Hybrid Retailer"},
+	}
+
+	tests := []struct {
+		name   string
+		filter retailTypeFilter
+		sort   retailSortKey
+		want   []string // expected Business order
+	}{
+		{"all, sort by business", retailFilterAll, retailSortBusiness,
+			[]string{"ACME", "Best", "Carlos", "Delta", "Echo"}},
+		{"hybrid only", retailFilterHybrid, retailSortBusiness,
+			[]string{"ACME", "Carlos", "Echo"}},
+		{"adult-use only", retailFilterAdultUseOnly, retailSortBusiness,
+			[]string{"Best"}},
+		{"medical only", retailFilterMedicalOnly, retailSortBusiness,
+			[]string{"Delta"}},
+		{"sort by city", retailFilterAll, retailSortCity,
+			[]string{"Delta", "Echo", "Best", "Carlos", "ACME"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := recomputeRetail(all, tc.filter, tc.sort)
+			var gotBiz []string
+			for _, r := range got {
+				gotBiz = append(gotBiz, r.Business)
+			}
+			if !reflect.DeepEqual(gotBiz, tc.want) {
+				t.Fatalf("got %v, want %v", gotBiz, tc.want)
+			}
+		})
 	}
 }

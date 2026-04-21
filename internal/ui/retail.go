@@ -2,10 +2,65 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
+
+// retailTypeFilter selects which retail locations the page shows.
+type retailTypeFilter int
+
+const (
+	retailFilterAll retailTypeFilter = iota
+	retailFilterHybrid
+	retailFilterAdultUseOnly
+	retailFilterMedicalOnly
+)
+
+// retailSortKey selects the list's row order.
+type retailSortKey int
+
+const (
+	retailSortBusiness retailSortKey = iota
+	retailSortCity
+)
+
+// recomputeRetail filters then sorts rows for the retail list.
+func recomputeRetail(all []models.RetailLocation, filter retailTypeFilter, key retailSortKey) []models.RetailLocation {
+	out := make([]models.RetailLocation, 0, len(all))
+	for _, r := range all {
+		if !retailRowMatches(r, filter) {
+			continue
+		}
+		out = append(out, r)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		switch key {
+		case retailSortCity:
+			if out[i].City != out[j].City {
+				return out[i].City < out[j].City
+			}
+			return out[i].Business < out[j].Business
+		default:
+			return out[i].Business < out[j].Business
+		}
+	})
+	return out
+}
+
+func retailRowMatches(r models.RetailLocation, filter retailTypeFilter) bool {
+	switch filter {
+	case retailFilterHybrid:
+		return r.Type == "Hybrid Retailer"
+	case retailFilterAdultUseOnly:
+		return r.Type == "Adult-Use Cannabis Only"
+	case retailFilterMedicalOnly:
+		return r.Type == "Medical Marijuana Only"
+	default:
+		return true
+	}
+}
 
 // retailTypeBadge returns a compact 2-3 char badge for a retail location type.
 // Returns "?" for empty or unrecognized types.
