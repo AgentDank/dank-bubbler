@@ -38,7 +38,12 @@ type ProductBrowser struct {
 	activeFilter  string
 	help          help.Model
 	leftList      list.Model
+	activePage    Page
 }
+
+// SetActivePage tells the browser which tab is currently active so the header
+// can render the tab strip with the correct highlight.
+func (pb *ProductBrowser) SetActivePage(p Page) { pb.activePage = p }
 
 // FilterMode represents the current filter type
 type FilterMode int
@@ -107,12 +112,12 @@ var (
 
 func (km browserHelpKeyMap) ShortHelp() []key.Binding {
 	if km.filterMode != FilterModeNone {
-		return []key.Binding{moveKey, applyFilterKey, cancelFilterKey, quitKey}
+		return []key.Binding{pagesKey, moveKey, applyFilterKey, cancelFilterKey, quitKey}
 	}
 
 	return []key.Binding{
-		moveKey,
 		pagesKey,
+		moveKey,
 		quitKey,
 		brandFilterKey,
 		nameFilterKey,
@@ -124,10 +129,10 @@ func (km browserHelpKeyMap) ShortHelp() []key.Binding {
 
 func (km browserHelpKeyMap) FullHelp() [][]key.Binding {
 	if km.filterMode != FilterModeNone {
-		return [][]key.Binding{{moveKey, applyFilterKey, cancelFilterKey, quitKey}}
+		return [][]key.Binding{{pagesKey, moveKey, applyFilterKey, cancelFilterKey, quitKey}}
 	}
 
-	return [][]key.Binding{{moveKey, pagesKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
+	return [][]key.Binding{{pagesKey, moveKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
 }
 
 func (p ProductItem) FilterValue() string {
@@ -583,19 +588,55 @@ func (pb *ProductBrowser) renderBarChartBox(outerWidth, outerHeight int, entries
 }
 
 func (pb *ProductBrowser) renderHeader() string {
-	if pb.width <= 0 {
+	return renderAppHeader(pb.width, pb.activePage)
+}
+
+// renderAppHeader renders the single-row top bar. Layout priority, from most
+// to least important as width shrinks: decorative title (right) → page tabs
+// → data-source label. The tabs highlight the active page.
+func renderAppHeader(width int, active Page) string {
+	if width <= 0 {
 		return ""
 	}
-
-	title := ansi.Truncate(appHeader, pb.width, "")
-	return lipgloss.NewStyle().
-		Width(pb.width).
-		MaxWidth(pb.width).
-		MaxHeight(1).
+	barStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("236")).
 		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Render(lipgloss.PlaceHorizontal(pb.width, lipgloss.Right, title))
+		Bold(true)
+	dimStyle := barStyle.Foreground(lipgloss.Color("245"))
+	activeStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("230")).
+		Foreground(lipgloss.Color("236")).
+		Bold(true)
+
+	var tabs []string
+	for i, t := range pageTabs {
+		text := " " + t.key + ":" + t.label + " "
+		if Page(i) == active {
+			tabs = append(tabs, activeStyle.Render(text))
+		} else {
+			tabs = append(tabs, barStyle.Render(text))
+		}
+	}
+	tabStrip := strings.Join(tabs, dimStyle.Render(" "))
+
+	rightRendered := barStyle.Render(ansi.Truncate(appHeader, width, "") + " ")
+	rightWidth := lipgloss.Width(rightRendered)
+
+	sourceLabel := barStyle.Render(" USA-CT Cannabis Data (data.ct.gov) ") + dimStyle.Render("│ ")
+	sourceWidth := lipgloss.Width(sourceLabel)
+	tabWidth := lipgloss.Width(tabStrip)
+
+	// Try full layout; progressively drop pieces if over budget.
+	left := sourceLabel + tabStrip
+	if sourceWidth+tabWidth+rightWidth > width {
+		left = tabStrip // drop the data source
+	}
+	if lipgloss.Width(left)+rightWidth > width {
+		left = "" // drop tabs too; keep only the decorative title
+	}
+
+	pad := max(width-lipgloss.Width(left)-rightWidth, 0)
+	return left + barStyle.Render(strings.Repeat(" ", pad)) + rightRendered
 }
 
 func (pb *ProductBrowser) renderHelp() string {

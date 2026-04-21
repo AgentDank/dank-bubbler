@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/help"
@@ -11,12 +13,45 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/barchart"
 	"github.com/NimbleMarkets/ntcharts/v2/canvas/runes"
+	"github.com/NimbleMarkets/ntcharts/v2/linechart"
 	"github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
+
+// commaInt formats a non-negative integer with thousands separators.
+func commaInt(n int64) string {
+	if n < 0 {
+		return "-" + commaInt(-n)
+	}
+	s := strconv.FormatInt(n, 10)
+	if len(s) <= 3 {
+		return s
+	}
+	head := len(s) % 3
+	var b strings.Builder
+	if head > 0 {
+		b.WriteString(s[:head])
+		if len(s) > head {
+			b.WriteByte(',')
+		}
+	}
+	for i := head; i < len(s); i += 3 {
+		b.WriteString(s[i : i+3])
+		if i+3 < len(s) {
+			b.WriteByte(',')
+		}
+	}
+	return b.String()
+}
+
+// dollarLabelFormatter formats Y-axis values as "$1,234,567".
+func dollarLabelFormatter() linechart.LabelFormatter {
+	return func(_ int, v float64) string {
+		return "$" + commaInt(int64(math.Round(v)))
+	}
+}
 
 // TimeRange selects the historical window shown on the Sales & Tax page.
 type TimeRange int
@@ -70,15 +105,20 @@ func (salesTaxHelpKeyMap) FullHelp() [][]key.Binding {
 // SalesTaxBrowser renders the Sales & Tax page: revenue line chart overlay,
 // stacked products-sold bars, and an average-price line chart.
 type SalesTaxBrowser struct {
-	loader    *data.Loader
-	width     int
-	height    int
-	timeRange TimeRange
-	tax       []models.TaxRecord
-	sales     []models.SalesRecord
-	loadErr   error
-	help      help.Model
+	loader     *data.Loader
+	width      int
+	height     int
+	timeRange  TimeRange
+	tax        []models.TaxRecord
+	sales      []models.SalesRecord
+	loadErr    error
+	help       help.Model
+	activePage Page
 }
+
+// SetActivePage tells the browser which tab is currently active so the header
+// can render the tab strip with the correct highlight.
+func (s *SalesTaxBrowser) SetActivePage(p Page) { s.activePage = p }
 
 // NewSalesTaxBrowser builds a new page bound to the given loader.
 func NewSalesTaxBrowser(loader *data.Loader) *SalesTaxBrowser {
@@ -170,18 +210,7 @@ func (s *SalesTaxBrowser) View() tea.View {
 }
 
 func (s *SalesTaxBrowser) renderHeader() string {
-	if s.width <= 0 {
-		return ""
-	}
-	title := ansi.Truncate(appHeader, s.width, "")
-	return lipgloss.NewStyle().
-		Width(s.width).
-		MaxWidth(s.width).
-		MaxHeight(1).
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Render(lipgloss.PlaceHorizontal(s.width, lipgloss.Right, title))
+	return renderAppHeader(s.width, s.activePage)
 }
 
 func (s *SalesTaxBrowser) renderHelp() string {
@@ -255,6 +284,7 @@ func (s *SalesTaxBrowser) renderRevenueChart(outerWidth, outerHeight int) string
 		timeserieslinechart.WithDataSetStyle(taxSet, taxStyle),
 		timeserieslinechart.WithDataSetLineStyle(taxSet, runes.ThinLineStyle),
 		timeserieslinechart.WithXLabelFormatter(timeserieslinechart.DateTimeLabelFormatter()),
+		timeserieslinechart.WithYLabelFormatter(dollarLabelFormatter()),
 	)
 	for _, r := range s.sales {
 		lc.Push(timeserieslinechart.TimePoint{Time: r.WeekEnding, Value: r.Total})
@@ -286,11 +316,29 @@ func (s *SalesTaxBrowser) renderProductsSoldChart(outerWidth, outerHeight int) s
 	title := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true).Render("Products Sold (stacked)")
 	adultStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Background(lipgloss.Color("4")) // blue
 	medStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("9"))   // red
+	axisLabelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 
-	// Keep the most recent weeks that fit in the canvas.
+	// Max stack total (adult + medical per week) for Y-axis scale.
+	var maxTotal int
+	for _, r := range s.sales {
+		if t := r.AdultUseProductsSold + r.MedicalProductsSold; t > maxTotal {
+			maxTotal = t
+		}
+	}
+
+	// Y-axis labels: top=max, middle=max/2, bottom=0.
+	topLbl := commaInt(int64(maxTotal))
+	midLbl := commaInt(int64(maxTotal / 2))
+	botLbl := "0"
+	labelWidth := max(max(lipgloss.Width(topLbl), lipgloss.Width(midLbl)), lipgloss.Width(botLbl))
+	// reserve: labelWidth + 1 space + 1 axis column
+	reserved := labelWidth + 2
+	chartWidth := max(innerWidth-reserved, 1)
+
+	// Keep the most recent weeks that fit in the chart area.
 	sales := s.sales
-	if len(sales) > innerWidth {
-		sales = sales[len(sales)-innerWidth:]
+	if len(sales) > chartWidth {
+		sales = sales[len(sales)-chartWidth:]
 	}
 
 	var data []barchart.BarData
@@ -305,7 +353,7 @@ func (s *SalesTaxBrowser) renderProductsSoldChart(outerWidth, outerHeight int) s
 	}
 
 	chartH := max(innerHeight-1, 1)
-	bc := barchart.New(innerWidth, chartH,
+	bc := barchart.New(chartWidth, chartH,
 		barchart.WithNoAutoBarWidth(),
 		barchart.WithBarWidth(1),
 		barchart.WithBarGap(0),
@@ -314,8 +362,28 @@ func (s *SalesTaxBrowser) renderProductsSoldChart(outerWidth, outerHeight int) s
 	)
 	bc.Draw()
 
+	// Compose Y-axis column on the left of the bar canvas, line by line.
+	chartLines := strings.Split(bc.View(), "\n")
+	axis := axisLabelStyle.Render("│")
+	rendered := make([]string, len(chartLines))
+	mid := len(chartLines) / 2
+	last := len(chartLines) - 1
+	for i, line := range chartLines {
+		var lbl string
+		switch i {
+		case 0:
+			lbl = topLbl
+		case mid:
+			lbl = midLbl
+		case last:
+			lbl = botLbl
+		}
+		pad := strings.Repeat(" ", labelWidth-lipgloss.Width(lbl))
+		rendered[i] = axisLabelStyle.Render(pad+lbl) + " " + axis + line
+	}
+
 	legend := adultStyle.Render("  ") + " adult-use  " + medStyle.Render("  ") + " medical"
-	body := lipgloss.JoinVertical(lipgloss.Left, title+"  "+legend, bc.View())
+	body := lipgloss.JoinVertical(lipgloss.Left, title+"  "+legend, strings.Join(rendered, "\n"))
 	return style.Width(outerWidth).Height(outerHeight).Render(body)
 }
 
@@ -332,7 +400,7 @@ func (s *SalesTaxBrowser) renderAvgPriceChart(outerWidth, outerHeight int) strin
 		return style.Width(outerWidth).Height(outerHeight).Render("window too small")
 	}
 
-	title := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true).Render("Average Price")
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true).Render("Average Price $")
 	chartHeight := max(innerHeight-1, 1)
 
 	minT, maxT := s.timeRangeBounds()
@@ -360,6 +428,7 @@ func (s *SalesTaxBrowser) renderAvgPriceChart(outerWidth, outerHeight int) strin
 		timeserieslinechart.WithDataSetStyle(medSet, medStyle),
 		timeserieslinechart.WithDataSetLineStyle(medSet, runes.ThinLineStyle),
 		timeserieslinechart.WithXLabelFormatter(timeserieslinechart.DateTimeLabelFormatter()),
+		timeserieslinechart.WithYLabelFormatter(dollarLabelFormatter()),
 	)
 	for _, r := range s.sales {
 		lc.Push(timeserieslinechart.TimePoint{Time: r.WeekEnding, Value: r.AdultUseAvgPrice})

@@ -42,12 +42,14 @@ tasks:
 
   fmt:
     desc: Format code
+    run: once
     cmds:
       - go fmt ./...
       - gofmt -s -w .
 
   tidy:
     desc: Tidy go.mod
+    run: once
     cmds:
       - go mod tidy
 

@@ -15,6 +15,15 @@ const (
 	PageSalesTax
 )
 
+// pageTabs drives the header tab strip. The index must match the Page value.
+var pageTabs = []struct {
+	key   string
+	label string
+}{
+	{"1", "Brands"},
+	{"2", "Sales & Tax"},
+}
+
 // AppModel is the top-level tea.Model. It holds one sub-browser per page and
 // routes input to the active one, plus handles page-switching hotkeys.
 type AppModel struct {
@@ -26,11 +35,18 @@ type AppModel struct {
 
 // NewAppModel wires the two pages.
 func NewAppModel(products []models.Product, brands []models.Brand, loader *data.Loader) *AppModel {
-	return &AppModel{
+	a := &AppModel{
 		page:     PageBrands,
 		brands:   NewProductBrowser(products, brands, loader),
 		salesTax: NewSalesTaxBrowser(loader),
 	}
+	a.syncActivePage()
+	return a
+}
+
+func (a *AppModel) syncActivePage() {
+	a.brands.SetActivePage(a.page)
+	a.salesTax.SetActivePage(a.page)
 }
 
 func (a *AppModel) Init() tea.Cmd {
@@ -51,9 +67,11 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "1":
 			a.page = PageBrands
+			a.syncActivePage()
 			return a, nil
 		case "2":
 			a.page = PageSalesTax
+			a.syncActivePage()
 			return a, nil
 		}
 	}
