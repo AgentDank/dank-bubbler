@@ -35,6 +35,7 @@ type AppModel struct {
 	brands     *ProductBrowser
 	salesTax   *SalesTaxBrowser
 	zoning     *ZoningBrowser
+	retail     *RetailBrowser
 	lastResize tea.WindowSizeMsg
 }
 
@@ -45,6 +46,7 @@ func NewAppModel(products []models.Product, brands []models.Brand, loader *data.
 		brands:   NewProductBrowser(products, brands, loader),
 		salesTax: NewSalesTaxBrowser(loader),
 		zoning:   NewZoningBrowser(loader),
+		retail:   NewRetailBrowser(loader),
 	}
 	a.syncActivePage()
 	return a
@@ -54,10 +56,11 @@ func (a *AppModel) syncActivePage() {
 	a.brands.SetActivePage(a.page)
 	a.salesTax.SetActivePage(a.page)
 	a.zoning.SetActivePage(a.page)
+	a.retail.SetActivePage(a.page)
 }
 
 func (a *AppModel) Init() tea.Cmd {
-	return tea.Batch(a.brands.Init(), a.salesTax.Init(), a.zoning.Init())
+	return tea.Batch(a.brands.Init(), a.salesTax.Init(), a.zoning.Init(), a.retail.Init())
 }
 
 func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -69,7 +72,8 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, cmdA := a.brands.Update(msg)
 		_, cmdB := a.salesTax.Update(msg)
 		_, cmdC := a.zoning.Update(msg)
-		return a, tea.Batch(cmdA, cmdB, cmdC)
+		_, cmdD := a.retail.Update(msg)
+		return a, tea.Batch(cmdA, cmdB, cmdC, cmdD)
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -83,6 +87,10 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "3":
 			a.page = PageZoning
+			a.syncActivePage()
+			return a, nil
+		case "4":
+			a.page = PageRetail
 			a.syncActivePage()
 			return a, nil
 		}
@@ -100,6 +108,8 @@ func (a *AppModel) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, cmd = a.salesTax.Update(msg)
 	case PageZoning:
 		_, cmd = a.zoning.Update(msg)
+	case PageRetail:
+		_, cmd = a.retail.Update(msg)
 	}
 	return a, cmd
 }
@@ -110,6 +120,8 @@ func (a *AppModel) View() tea.View {
 		return a.salesTax.View()
 	case PageZoning:
 		return a.zoning.View()
+	case PageRetail:
+		return a.retail.View()
 	default:
 		return a.brands.View()
 	}
