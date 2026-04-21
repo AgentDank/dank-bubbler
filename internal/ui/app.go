@@ -34,15 +34,17 @@ type AppModel struct {
 	page       Page
 	brands     *ProductBrowser
 	salesTax   *SalesTaxBrowser
+	zoning     *ZoningBrowser
 	lastResize tea.WindowSizeMsg
 }
 
-// NewAppModel wires the two pages.
+// NewAppModel wires the pages.
 func NewAppModel(products []models.Product, brands []models.Brand, loader *data.Loader) *AppModel {
 	a := &AppModel{
 		page:     PageBrands,
 		brands:   NewProductBrowser(products, brands, loader),
 		salesTax: NewSalesTaxBrowser(loader),
+		zoning:   NewZoningBrowser(loader),
 	}
 	a.syncActivePage()
 	return a
@@ -51,21 +53,23 @@ func NewAppModel(products []models.Product, brands []models.Brand, loader *data.
 func (a *AppModel) syncActivePage() {
 	a.brands.SetActivePage(a.page)
 	a.salesTax.SetActivePage(a.page)
+	a.zoning.SetActivePage(a.page)
 }
 
 func (a *AppModel) Init() tea.Cmd {
-	return tea.Batch(a.brands.Init(), a.salesTax.Init())
+	return tea.Batch(a.brands.Init(), a.salesTax.Init(), a.zoning.Init())
 }
 
 func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.lastResize = msg
-		// Forward size changes to both pages so the inactive page is ready
+		// Forward size changes to all pages so the inactive pages are ready
 		// when the user switches.
 		_, cmdA := a.brands.Update(msg)
 		_, cmdB := a.salesTax.Update(msg)
-		return a, tea.Batch(cmdA, cmdB)
+		_, cmdC := a.zoning.Update(msg)
+		return a, tea.Batch(cmdA, cmdB, cmdC)
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -75,6 +79,10 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "2":
 			a.page = PageSalesTax
+			a.syncActivePage()
+			return a, nil
+		case "3":
+			a.page = PageZoning
 			a.syncActivePage()
 			return a, nil
 		}
@@ -90,6 +98,8 @@ func (a *AppModel) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, cmd = a.brands.Update(msg)
 	case PageSalesTax:
 		_, cmd = a.salesTax.Update(msg)
+	case PageZoning:
+		_, cmd = a.zoning.Update(msg)
 	}
 	return a, cmd
 }
@@ -98,6 +108,8 @@ func (a *AppModel) View() tea.View {
 	switch a.page {
 	case PageSalesTax:
 		return a.salesTax.View()
+	case PageZoning:
+		return a.zoning.View()
 	default:
 		return a.brands.View()
 	}
