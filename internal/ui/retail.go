@@ -327,6 +327,7 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		mapW := r.width - listW
 
 		r.tbl.SetHeight(max(bodyH-4, 3))
+		r.tbl.SetWidth(max(listW-4, 10))
 		businessW := max(listW-5-12-2, 10) // total minus borders, city col, type col, padding
 		r.tbl.SetColumns([]table.Column{
 			{Title: "Business", Width: businessW},

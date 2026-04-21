@@ -179,6 +179,7 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Resize table: subtract header (1) + status line (1) + help (1) + table border (2).
 		tH := max(msg.Height-5, 3)
 		z.tbl.SetHeight(tH)
+		z.tbl.SetWidth(msg.Width)
 		// Keep town column fat, status column lean.
 		statusW := 12
 		townW := max(msg.Width-statusW-4, 10) // -4 for borders/padding
