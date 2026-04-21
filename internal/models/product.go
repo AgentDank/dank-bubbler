@@ -57,3 +57,24 @@ type SalesRecord struct {
 	AdultUseAvgPrice     float64
 	MedicalAvgPrice      float64
 }
+
+// ZoningRow is one row from ct_zoning. Empty Status represents a SQL NULL
+// (rendered as "Unknown" in the UI).
+type ZoningRow struct {
+	Town   string
+	Status string
+}
+
+// RetailLocation is one row from ct_retail_locations.
+type RetailLocation struct {
+	Type      string
+	Business  string
+	DBA       string
+	License   string
+	Street    string
+	City      string
+	Zipcode   string
+	Website   string
+	Longitude float64
+	Latitude  float64
+}
