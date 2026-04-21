@@ -13,6 +13,8 @@ type Page int
 const (
 	PageBrands Page = iota
 	PageSalesTax
+	PageZoning
+	PageRetail
 )
 
 // pageTabs drives the header tab strip. The index must match the Page value.
@@ -22,6 +24,8 @@ var pageTabs = []struct {
 }{
 	{"1", "Brands"},
 	{"2", "Sales & Tax"},
+	{"3", "Zoning"},
+	{"4", "Retail"},
 }
 
 // AppModel is the top-level tea.Model. It holds one sub-browser per page and
