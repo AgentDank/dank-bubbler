@@ -32,6 +32,7 @@ tasks:
 
   test:
     desc: Run tests
+    deps: [tidy]
     cmds:
       - go test -v ./...
 

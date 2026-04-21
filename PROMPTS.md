@@ -69,3 +69,6 @@ can the list box clip the entries if they don't fit?  what list widget are we us
 
 ### 2026-04-16T20:02:17Z - Switch To Bubbles List
 use "charm.land/bubbles/v2/list"
+
+### 2026-04-21T00:00:00Z - Add Basic Mapview Test File
+i put a blank file mapview/mapview_test.go      fill it out with a basic test of mapview.go.   i expect it to fail to build because i'm mid-migration of the file from bubbletea v1.   don't worry about that just construct the test file for me
