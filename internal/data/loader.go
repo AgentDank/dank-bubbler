@@ -572,6 +572,74 @@ func (l *Loader) LoadSalesHistory(start, end time.Time) ([]models.SalesRecord, e
 	return out, rows.Err()
 }
 
+// LoadZoning returns every row from ct_zoning, ordered by town. NULL status
+// values come back as empty strings.
+func (l *Loader) LoadZoning() ([]models.ZoningRow, error) {
+	if l.db == nil {
+		return nil, fmt.Errorf("database not open")
+	}
+	rows, err := l.db.Query(`
+		SELECT town, COALESCE(status, '')
+		FROM ct_zoning
+		ORDER BY town
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query zoning: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []models.ZoningRow
+	for rows.Next() {
+		var r models.ZoningRow
+		if err := rows.Scan(&r.Town, &r.Status); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// LoadRetailLocations returns every row from ct_retail_locations, ordered
+// by business. Missing string fields come back as empty strings.
+func (l *Loader) LoadRetailLocations() ([]models.RetailLocation, error) {
+	if l.db == nil {
+		return nil, fmt.Errorf("database not open")
+	}
+	rows, err := l.db.Query(`
+		SELECT
+			COALESCE(type, ''),
+			COALESCE(business, ''),
+			COALESCE(dba, ''),
+			COALESCE(license, ''),
+			COALESCE(street, ''),
+			COALESCE(city, ''),
+			COALESCE(zipcode, ''),
+			COALESCE(website, ''),
+			COALESCE(longitude, 0),
+			COALESCE(latitude, 0)
+		FROM ct_retail_locations
+		ORDER BY business
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query retail locations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []models.RetailLocation
+	for rows.Next() {
+		var r models.RetailLocation
+		if err := rows.Scan(
+			&r.Type, &r.Business, &r.DBA, &r.License,
+			&r.Street, &r.City, &r.Zipcode, &r.Website,
+			&r.Longitude, &r.Latitude,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func nullableTime(t time.Time) any {
 	if t.IsZero() {
 		return nil
