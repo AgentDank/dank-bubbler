@@ -5,7 +5,15 @@ import (
 	"sort"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
+	"github.com/AgentDank/dank-bubbler/mapview"
 )
 
 // retailTypeFilter selects which retail locations the page shows.
@@ -127,4 +135,181 @@ func formatRetailDetailBar(loc models.RetailLocation) (string, string) {
 	}
 
 	return strings.Join(line1Parts, "  —  "), strings.Join(line2Parts, "  —  ")
+}
+
+type retailFocus int
+
+const (
+	focusList retailFocus = iota
+	focusMap
+)
+
+var (
+	retailCycleFilterKey = key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "type"))
+	retailToggleSortKey  = key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "sort"))
+	retailFocusKey       = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus"))
+)
+
+type retailHelpKeyMap struct{}
+
+func (retailHelpKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{pagesKey, moveKey, retailCycleFilterKey, retailToggleSortKey, retailFocusKey, quitKey}
+}
+
+func (retailHelpKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{pagesKey, moveKey, retailCycleFilterKey, retailToggleSortKey, retailFocusKey, quitKey}}
+}
+
+type RetailBrowser struct {
+	loader        *data.Loader
+	all           []models.RetailLocation
+	view          []models.RetailLocation
+	tbl           table.Model
+	mv            mapview.Model
+	focus         retailFocus
+	typeFilter    retailTypeFilter
+	sortBy        retailSortKey
+	width, height int
+	help          help.Model
+	activePage    Page
+	loadErr       error
+	lastSelected  int
+}
+
+func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
+	r := &RetailBrowser{
+		loader:       loader,
+		focus:        focusList,
+		lastSelected: -1,
+	}
+	r.help = help.New()
+	r.help.ShortSeparator = "  "
+	r.help.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Bold(true)
+	r.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	r.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	r.tbl = table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Business", Width: 20},
+			{Title: "City", Width: 12},
+			{Title: "Type", Width: 5},
+		}),
+		table.WithFocused(true),
+	)
+	r.mv = mapview.New(40, 12) // replaced on first resize
+	// Center on CT until first selection lands.
+	r.mv.SetLatLng(41.6, -72.7, 8)
+	r.reload()
+	return r
+}
+
+func (r *RetailBrowser) SetActivePage(p Page) { r.activePage = p }
+
+func (r *RetailBrowser) Init() tea.Cmd { return nil }
+
+func (r *RetailBrowser) reload() {
+	if r.loader == nil {
+		return
+	}
+	rows, err := r.loader.LoadRetailLocations()
+	if err != nil {
+		r.loadErr = err
+		return
+	}
+	r.all = rows
+	r.loadErr = nil
+	r.recompute()
+}
+
+func (r *RetailBrowser) recompute() {
+	r.view = recomputeRetail(r.all, r.typeFilter, r.sortBy)
+	tRows := make([]table.Row, 0, len(r.view))
+	for _, loc := range r.view {
+		tRows = append(tRows, table.Row{loc.Business, loc.City, retailTypeBadge(loc.Type)})
+	}
+	r.tbl.SetRows(tRows)
+	r.lastSelected = -1 // force re-center on next Update
+}
+
+func (r *RetailBrowser) selectedLocation() (models.RetailLocation, bool) {
+	if len(r.view) == 0 {
+		return models.RetailLocation{}, false
+	}
+	idx := r.tbl.Cursor()
+	if idx < 0 || idx >= len(r.view) {
+		return models.RetailLocation{}, false
+	}
+	return r.view[idx], true
+}
+
+func (r *RetailBrowser) View() tea.View {
+	header := renderAppHeader(r.width, r.activePage)
+	footer := r.renderHelp()
+
+	if r.width < 80 || r.height < 20 {
+		small := lipgloss.NewStyle().Width(r.width).Height(max(r.height-2, 1)).
+			Align(lipgloss.Center, lipgloss.Center).
+			Render("window too small")
+		return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, small, footer))
+	}
+
+	// Body layout: list (left) | map (right), then detail (2 rows), then help.
+	detailH := 2
+	bodyH := max(r.height-1-detailH-1, 4) // header + detail + footer
+	listW := max(r.width*2/5, 30)
+	mapW := r.width - listW
+
+	listStyled := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("6")).
+		Width(listW - 2).
+		Height(bodyH - 2).
+		Render(r.tbl.View())
+
+	mapStyled := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("6")).
+		Width(mapW - 2).
+		Height(bodyH - 2).
+		Render(r.mv.View().Content)
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, listStyled, mapStyled)
+
+	detail := r.renderDetailBar(r.width, detailH)
+
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, body, detail, footer))
+}
+
+func (r *RetailBrowser) renderDetailBar(width, _ int) string {
+	if r.loadErr != nil {
+		return lipgloss.NewStyle().Width(width).Render("load error: " + r.loadErr.Error())
+	}
+	loc, ok := r.selectedLocation()
+	if !ok {
+		return lipgloss.NewStyle().
+			Width(width).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("3")).
+			Render("no matching retailers")
+	}
+	l1, l2 := formatRetailDetailBar(loc)
+	box := lipgloss.NewStyle().
+		Width(width - 2).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("3")).
+		Padding(0, 1)
+	return box.Render(l1 + "\n" + l2)
+}
+
+func (r *RetailBrowser) renderHelp() string {
+	if r.width <= 0 {
+		return ""
+	}
+	helpText := r.help.View(retailHelpKeyMap{})
+	return lipgloss.NewStyle().
+		Width(r.width).
+		MaxWidth(r.width).
+		MaxHeight(1).
+		Background(lipgloss.Color("238")).
+		Foreground(lipgloss.Color("252")).
+		Render(helpText)
 }
