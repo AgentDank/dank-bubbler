@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -148,6 +148,11 @@ func (m *Model) SetLocation(loc string, zoom int) {
 	m.applyToOSM()
 }
 
+func getThunderforestAPIKey() string {
+	// In a real application, you would want to load this from an environment variable or configuration file
+	return "YOUR_THUNDERFOREST_API_KEY"
+}
+
 func (m *Model) SetStyle(style Style) {
 	switch style {
 	case Wikimedia:
@@ -167,11 +172,11 @@ func (m *Model) SetStyle(style Style) {
 	case StamenTerrain:
 		m.tileProvider = sm.NewTileProviderStamenTerrain()
 	case ThunderforestLandscape:
-		m.tileProvider = sm.NewTileProviderThunderforestLandscape()
+		m.tileProvider = sm.NewTileProviderThunderforestLandscape(getThunderforestAPIKey())
 	case ThunderforestOutdoors:
-		m.tileProvider = sm.NewTileProviderThunderforestOutdoors()
+		m.tileProvider = sm.NewTileProviderThunderforestOutdoors(getThunderforestAPIKey())
 	case ThunderforestTransport:
-		m.tileProvider = sm.NewTileProviderThunderforestTransport()
+		m.tileProvider = sm.NewTileProviderThunderforestTransport(getThunderforestAPIKey())
 	case ArcgisWorldImagery:
 		m.tileProvider = sm.NewTileProviderArcgisWorldImagery()
 	}
@@ -306,7 +311,7 @@ func (m *Model) lookup(address string) tea.Cmd {
 			return MapCoordinates{Err: err}
 		}
 		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return MapCoordinates{Err: errors.New(string(body))}
 		}
@@ -336,6 +341,6 @@ func (m *Model) lookup(address string) tea.Cmd {
 	}
 }
 
-func (m Model) View() string {
-	return m.maprender
+func (m Model) View() tea.View {
+	return tea.NewView(m.maprender)
 }

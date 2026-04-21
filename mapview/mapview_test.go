@@ -45,8 +45,8 @@ func TestNewInitializesDefaultState(t *testing.T) {
 		t.Fatal("expected tile provider to be initialized")
 	}
 
-	if m.View() != "" {
-		t.Fatalf("expected empty initial view, got %q", m.View())
+	if m.View().Content != "" {
+		t.Fatalf("expected empty initial view, got %q", m.View().Content)
 	}
 }
 
@@ -75,8 +75,8 @@ func TestUpdateHandlesCoordinatesAndRenderMessage(t *testing.T) {
 		t.Fatal("expected no command after receiving rendered map")
 	}
 
-	if updated.View() != "rendered map" {
-		t.Fatalf("expected view to return rendered map, got %q", updated.View())
+	if updated.View().Content != "rendered map" {
+		t.Fatalf("expected view to return rendered map, got %q", updated.View().Content)
 	}
 }
 
