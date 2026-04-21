@@ -413,8 +413,9 @@ func recomputeZoning(all []models.ZoningRow, filter zoningStatusFilter, key zoni
 	sort.SliceStable(out, func(i, j int) bool {
 		switch key {
 		case zoningSortStatus:
-			if out[i].Status != out[j].Status {
-				return out[i].Status < out[j].Status
+			si, sj := zoningStatusRank(out[i].Status), zoningStatusRank(out[j].Status)
+			if si != sj {
+				return si < sj
 			}
 			return out[i].Town < out[j].Town
 		default:
@@ -422,6 +423,22 @@ func recomputeZoning(all []models.ZoningRow, filter zoningStatusFilter, key zoni
 		}
 	})
 	return out
+}
+
+// zoningStatusRank returns a sort rank so display order is Approved <
+// Moratorium < Prohibited < Unknown (empty string). Plain string `<` would
+// put "" first, contradicting the spec.
+func zoningStatusRank(status string) int {
+	switch status {
+	case "Approved":
+		return 0
+	case "Moratorium":
+		return 1
+	case "Prohibited":
+		return 2
+	default:
+		return 3
+	}
 }
 
 func zoningRowMatches(r models.ZoningRow, filter zoningStatusFilter) bool {
