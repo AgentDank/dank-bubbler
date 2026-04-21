@@ -134,3 +134,33 @@ func TestLayoutDimensions(t *testing.T) {
 		}
 	}
 }
+
+func TestZoningLayoutFitsWindow(t *testing.T) {
+	z := NewZoningBrowser(nil)
+	sizes := []struct{ w, h int }{{80, 24}, {100, 40}, {120, 50}}
+	for _, sz := range sizes {
+		z.Update(tea.WindowSizeMsg{Width: sz.w, Height: sz.h})
+		v := z.View()
+		if w := lipgloss.Width(v.Content); w > sz.w {
+			t.Errorf("zoning: size %dx%d overflow width %d", sz.w, sz.h, w)
+		}
+		if h := lipgloss.Height(v.Content); h > sz.h {
+			t.Errorf("zoning: size %dx%d overflow height %d", sz.w, sz.h, h)
+		}
+	}
+}
+
+func TestRetailLayoutFitsWindow(t *testing.T) {
+	r := NewRetailBrowser(nil)
+	sizes := []struct{ w, h int }{{80, 24}, {100, 40}, {120, 50}}
+	for _, sz := range sizes {
+		r.Update(tea.WindowSizeMsg{Width: sz.w, Height: sz.h})
+		v := r.View()
+		if w := lipgloss.Width(v.Content); w > sz.w {
+			t.Errorf("retail: size %dx%d overflow width %d", sz.w, sz.h, w)
+		}
+		if h := lipgloss.Height(v.Content); h > sz.h {
+			t.Errorf("retail: size %dx%d overflow height %d", sz.w, sz.h, h)
+		}
+	}
+}
