@@ -135,6 +135,11 @@ func (m *Model) applyToOSM() {
 	m.osm.SetZoom(m.zoom)
 }
 
+// Zoom returns the current zoom level.
+func (m Model) Zoom() int {
+	return m.zoom
+}
+
 func (m *Model) SetLatLng(lat float64, lng float64, zoom int) {
 	m.lat = lat
 	m.lng = lng

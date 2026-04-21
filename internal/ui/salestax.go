@@ -89,7 +89,7 @@ func (r TimeRange) start(end time.Time) time.Time {
 var (
 	prevRangeKey = key.NewBinding(key.WithKeys("left"), key.WithHelp("←", "prev range"))
 	nextRangeKey = key.NewBinding(key.WithKeys("right"), key.WithHelp("→", "next range"))
-	pagesKey     = key.NewBinding(key.WithKeys("1", "2"), key.WithHelp("1/2", "page"))
+	pagesKey     = key.NewBinding(key.WithKeys("1", "2", "3", "4"), key.WithHelp("1-4", "page"))
 )
 
 type salesTaxHelpKeyMap struct{}
@@ -475,4 +475,3 @@ func (s *SalesTaxBrowser) timeRangeBounds() (time.Time, time.Time) {
 	}
 	return start, end
 }
-

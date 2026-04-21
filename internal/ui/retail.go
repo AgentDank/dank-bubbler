@@ -342,7 +342,7 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab":
+		case "tab", "shift+tab":
 			if r.focus == focusList {
 				r.focus = focusMap
 			} else {
@@ -396,7 +396,11 @@ func (r *RetailBrowser) centerMapOnSelectionIfChanged(force bool) tea.Cmd {
 	if loc.Latitude == 0 && loc.Longitude == 0 {
 		return nil
 	}
-	r.mv.SetLatLng(loc.Latitude, loc.Longitude, 12)
+	zoom := r.mv.Zoom()
+	if zoom <= 0 {
+		zoom = 12 // default if mapview hasn't been initialized with a zoom yet
+	}
+	r.mv.SetLatLng(loc.Latitude, loc.Longitude, zoom)
 	// mapview renders lazily via its own Update path. Force a render by
 	// sending a MapCoordinates message through its Update loop.
 	var cmd tea.Cmd
