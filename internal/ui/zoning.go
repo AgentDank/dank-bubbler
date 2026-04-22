@@ -113,12 +113,15 @@ func NewZoningBrowser(loader *data.Loader) *ZoningBrowser {
 	z.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	z.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
+	headerStyles := table.DefaultStyles()
+	headerStyles.Header = headerStyles.Header.Reverse(true)
 	for i := range z.tbls {
 		z.tbls[i] = table.New(
 			table.WithColumns([]table.Column{
 				{Title: zoningColumnStatuses[i], Width: 16},
 			}),
 			table.WithFocused(i == 0),
+			table.WithStyles(headerStyles),
 		)
 	}
 

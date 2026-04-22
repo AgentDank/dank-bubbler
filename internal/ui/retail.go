@@ -187,6 +187,8 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 	r.help.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Bold(true)
 	r.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	r.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	headerStyles := table.DefaultStyles()
+	headerStyles.Header = headerStyles.Header.Reverse(true)
 	r.tbl = table.New(
 		table.WithColumns([]table.Column{
 			{Title: "Business", Width: 20},
@@ -194,6 +196,7 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 			{Title: "Type", Width: 5},
 		}),
 		table.WithFocused(true),
+		table.WithStyles(headerStyles),
 	)
 	r.mv = mapview.New(40, 12) // replaced on first resize
 	// Center on CT until first selection lands.
