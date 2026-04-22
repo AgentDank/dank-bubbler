@@ -261,9 +261,10 @@ func (r *RetailBrowser) View() tea.View {
 	}
 
 	// Body layout: list (left) | map (right), then detail (2 rows), then help.
+	// listW formula must match the one in Update so the table inside fits.
 	detailH := 2
 	bodyH := max(r.height-1-detailH-1, 4) // header + detail + footer
-	listW := max(r.width*2/5, 30)
+	listW := max(r.width/2, 40)
 	mapW := r.width - listW
 
 	listStyled := lipgloss.NewStyle().
@@ -331,16 +332,26 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		detailH := 2
 		bodyH := max(r.height-1-detailH-1, 4)
-		listW := max(r.width*2/5, 30)
+		listW := max(r.width/2, 40)
 		mapW := r.width - listW
 
+		// listStyled has outer width (listW-2) with a Border, so its content
+		// area is (listW-4). The table render uses that full content width
+		// and its 3 cells each consume +2 chars of Padding(0,1), so the
+		// per-cell content budget is (listW - 4 - 6).
+		const (
+			cityW = 12
+			typeW = 3 // HYB / AU / MED
+		)
+		tblW := max(listW-4, 10)
+		businessW := max(tblW-6-cityW-typeW, 8)
+
 		r.tbl.SetHeight(max(bodyH-4, 3))
-		r.tbl.SetWidth(max(listW-4, 10))
-		businessW := max(listW-5-12-2, 10) // total minus borders, city col, type col, padding
+		r.tbl.SetWidth(tblW)
 		r.tbl.SetColumns([]table.Column{
 			{Title: "Business", Width: businessW},
-			{Title: "City", Width: 12},
-			{Title: "Type", Width: 5},
+			{Title: "City", Width: cityW},
+			{Title: "Type", Width: typeW},
 		})
 
 		r.mv.Width = max(mapW-2, 20)
