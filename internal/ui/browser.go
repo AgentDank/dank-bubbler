@@ -51,6 +51,10 @@ type FilterMode int
 const (
 	appHeader = "𓁹‿𓁹 AgentDank dank-bubbler 𖠞༄"
 
+	// tableHeaderBg is the background color applied to table column headers
+	// across the app (ANSI 22 — dark green).
+	tableHeaderBg = "22"
+
 	FilterModeNone FilterMode = iota
 	FilterModeByBrand
 	FilterModeByName

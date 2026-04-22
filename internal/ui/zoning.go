@@ -114,7 +114,9 @@ func NewZoningBrowser(loader *data.Loader) *ZoningBrowser {
 	z.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
 	headerStyles := table.DefaultStyles()
-	headerStyles.Header = headerStyles.Header.Reverse(true)
+	headerStyles.Header = headerStyles.Header.
+		Background(lipgloss.Color(tableHeaderBg)).
+		Foreground(lipgloss.Color("230"))
 	for i := range z.tbls {
 		z.tbls[i] = table.New(
 			table.WithColumns([]table.Column{

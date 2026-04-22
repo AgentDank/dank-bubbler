@@ -188,7 +188,9 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 	r.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	r.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	headerStyles := table.DefaultStyles()
-	headerStyles.Header = headerStyles.Header.Reverse(true)
+	headerStyles.Header = headerStyles.Header.
+		Background(lipgloss.Color(tableHeaderBg)).
+		Foreground(lipgloss.Color("230"))
 	r.tbl = table.New(
 		table.WithColumns([]table.Column{
 			{Title: "Business", Width: 20},
