@@ -55,6 +55,11 @@ const (
 	// across the app (ANSI 22 — dark green).
 	tableHeaderBg = "22"
 
+	// tableSelectedBg is the background color applied to the selected row of
+	// table widgets across the app (ANSI 34 — a brighter green that pairs
+	// with the darker tableHeaderBg).
+	tableSelectedBg = "34"
+
 	FilterModeNone FilterMode = iota
 	FilterModeByBrand
 	FilterModeByName

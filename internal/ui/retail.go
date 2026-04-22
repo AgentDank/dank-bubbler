@@ -191,6 +191,9 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 	headerStyles.Header = headerStyles.Header.
 		Background(lipgloss.Color(tableHeaderBg)).
 		Foreground(lipgloss.Color("230"))
+	headerStyles.Selected = headerStyles.Selected.
+		Background(lipgloss.Color(tableSelectedBg)).
+		Foreground(lipgloss.Color("230"))
 	r.tbl = table.New(
 		table.WithColumns([]table.Column{
 			{Title: "Business", Width: 20},

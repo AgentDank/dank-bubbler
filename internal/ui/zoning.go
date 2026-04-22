@@ -117,6 +117,9 @@ func NewZoningBrowser(loader *data.Loader) *ZoningBrowser {
 	headerStyles.Header = headerStyles.Header.
 		Background(lipgloss.Color(tableHeaderBg)).
 		Foreground(lipgloss.Color("230"))
+	headerStyles.Selected = headerStyles.Selected.
+		Background(lipgloss.Color(tableSelectedBg)).
+		Foreground(lipgloss.Color("230"))
 	for i := range z.tbls {
 		z.tbls[i] = table.New(
 			table.WithColumns([]table.Column{
