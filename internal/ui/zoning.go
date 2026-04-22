@@ -14,106 +14,90 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
-// zoningStatusFilter selects which rows the zoning page shows.
-type zoningStatusFilter int
+// zoningSortOrder determines the alphabetical direction applied to each column.
+type zoningSortOrder int
 
 const (
-	zoningFilterAll zoningStatusFilter = iota
-	zoningFilterApproved
-	zoningFilterProhibited
-	zoningFilterMoratorium
-	zoningFilterUnknown
+	zoningSortAsc zoningSortOrder = iota
+	zoningSortDesc
 )
 
-// zoningSortKey selects the table's row order.
-type zoningSortKey int
+// zoningColumnCount is the number of status columns on the page.
+const zoningColumnCount = 4
 
-const (
-	zoningSortTown zoningSortKey = iota
-	zoningSortStatus
-)
-
-// recomputeZoning filters then sorts rows for the zoning table. The status
-// filter matches on the raw string ("" is the Unknown bucket). The sort is
-// stable with Town as the tiebreaker when sorting by Status.
-func recomputeZoning(all []models.ZoningRow, filter zoningStatusFilter, key zoningSortKey) []models.ZoningRow {
-	out := make([]models.ZoningRow, 0, len(all))
-	for _, r := range all {
-		if !zoningRowMatches(r, filter) {
-			continue
-		}
-		out = append(out, r)
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		switch key {
-		case zoningSortStatus:
-			si, sj := zoningStatusRank(out[i].Status), zoningStatusRank(out[j].Status)
-			if si != sj {
-				return si < sj
-			}
-			return out[i].Town < out[j].Town
-		default:
-			return out[i].Town < out[j].Town
-		}
-	})
-	return out
+// zoningColumnStatuses is the fixed, ordered list of statuses shown as columns.
+var zoningColumnStatuses = [zoningColumnCount]string{
+	"Approved",
+	"Prohibited",
+	"Moratorium",
+	"Unknown",
 }
 
-// zoningStatusRank returns a sort rank for the status string so that the
-// display order is Approved < Moratorium < Prohibited < Unknown ("").
-func zoningStatusRank(status string) int {
+// zoningColumnRows partitions `all` into one slice per status column (in
+// zoningColumnStatuses order) and sorts each slice by town in `order`
+// direction. Empty status values are bucketed as "Unknown" (index 3).
+func zoningColumnRows(all []models.ZoningRow, order zoningSortOrder) [zoningColumnCount][]models.ZoningRow {
+	var cols [zoningColumnCount][]models.ZoningRow
+	for _, r := range all {
+		idx := zoningColumnIndex(r.Status)
+		cols[idx] = append(cols[idx], r)
+	}
+	for i := range cols {
+		sortRows(cols[i], order)
+	}
+	return cols
+}
+
+// zoningColumnIndex maps a status string to its column index. Empty string
+// (representing NULL / literal "null" after normalization) maps to 3 (Unknown).
+// Unrecognized non-empty statuses also fall through to Unknown so no data
+// silently disappears.
+func zoningColumnIndex(status string) int {
 	switch status {
 	case "Approved":
 		return 0
-	case "Moratorium":
-		return 1
 	case "Prohibited":
+		return 1
+	case "Moratorium":
 		return 2
-	default: // "" (Unknown) and anything else sorts last
+	default: // "" and anything unrecognized
 		return 3
 	}
 }
 
-func zoningRowMatches(r models.ZoningRow, filter zoningStatusFilter) bool {
-	switch filter {
-	case zoningFilterApproved:
-		return r.Status == "Approved"
-	case zoningFilterProhibited:
-		return r.Status == "Prohibited"
-	case zoningFilterMoratorium:
-		return r.Status == "Moratorium"
-	case zoningFilterUnknown:
-		return r.Status == ""
-	default:
-		return true
-	}
+func sortRows(rows []models.ZoningRow, order zoningSortOrder) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		if order == zoningSortDesc {
+			return rows[i].Town > rows[j].Town
+		}
+		return rows[i].Town < rows[j].Town
+	})
 }
 
 var (
-	zoningCycleFilterKey = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "status"))
-	zoningToggleSortKey  = key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "sort"))
+	zoningFocusKey    = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus"))
+	zoningSortKeyBind = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
 )
 
 type zoningHelpKeyMap struct{}
 
 func (zoningHelpKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{pagesKey, moveKey, zoningCycleFilterKey, zoningToggleSortKey, quitKey}
+	return []key.Binding{pagesKey, moveKey, zoningFocusKey, zoningSortKeyBind, quitKey}
 }
 
 func (zoningHelpKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{pagesKey, moveKey, zoningCycleFilterKey, zoningToggleSortKey, quitKey}}
+	return [][]key.Binding{{pagesKey, moveKey, zoningFocusKey, zoningSortKeyBind, quitKey}}
 }
 
-// ZoningBrowser renders the Zoning page: filterable, sortable table of CT towns.
+// ZoningBrowser shows four side-by-side tables, one per zoning status.
 type ZoningBrowser struct {
 	loader        *data.Loader
 	all           []models.ZoningRow
-	view          []models.ZoningRow
-	tbl           table.Model
+	cols          [zoningColumnCount][]models.ZoningRow // view: partitioned + sorted
+	tbls          [zoningColumnCount]table.Model
+	focus         int // 0..zoningColumnCount-1
+	sortOrder     zoningSortOrder
 	width, height int
-	statusFilter  zoningStatusFilter
-	sortBy        zoningSortKey
 	help          help.Model
 	activePage    Page
 	loadErr       error
@@ -128,13 +112,16 @@ func NewZoningBrowser(loader *data.Loader) *ZoningBrowser {
 	z.help.Styles.ShortKey = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Bold(true)
 	z.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	z.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	z.tbl = table.New(
-		table.WithColumns([]table.Column{
-			{Title: "Town", Width: 30},
-			{Title: "Status", Width: 12},
-		}),
-		table.WithFocused(true),
-	)
+
+	for i := range z.tbls {
+		z.tbls[i] = table.New(
+			table.WithColumns([]table.Column{
+				{Title: zoningColumnStatuses[i], Width: 16},
+			}),
+			table.WithFocused(i == 0),
+		)
+	}
+
 	z.reload()
 	return z
 }
@@ -158,16 +145,14 @@ func (z *ZoningBrowser) reload() {
 }
 
 func (z *ZoningBrowser) recompute() {
-	z.view = recomputeZoning(z.all, z.statusFilter, z.sortBy)
-	tRows := make([]table.Row, 0, len(z.view))
-	for _, r := range z.view {
-		status := r.Status
-		if status == "" {
-			status = "Unknown"
+	z.cols = zoningColumnRows(z.all, z.sortOrder)
+	for i := range z.cols {
+		tRows := make([]table.Row, 0, len(z.cols[i]))
+		for _, r := range z.cols[i] {
+			tRows = append(tRows, table.Row{r.Town})
 		}
-		tRows = append(tRows, table.Row{r.Town, status})
+		z.tbls[i].SetRows(tRows)
 	}
-	z.tbl.SetRows(tRows)
 }
 
 func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -176,28 +161,40 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		z.width = msg.Width
 		z.height = msg.Height
 		z.help.SetWidth(msg.Width)
-		// Resize table: subtract header (1) + status line (1) + help (1) + table border (2).
-		tH := max(msg.Height-5, 3)
-		z.tbl.SetHeight(tH)
-		z.tbl.SetWidth(msg.Width)
-		// Keep town column fat, status column lean.
-		statusW := 12
-		townW := max(msg.Width-statusW-4, 10) // -4 for borders/padding
-		z.tbl.SetColumns([]table.Column{
-			{Title: "Town", Width: townW},
-			{Title: "Status", Width: statusW},
-		})
+
+		// Layout: header (1) + summary (1) + columns body + footer (1).
+		bodyH := max(msg.Height-3, 4)
+		// Each column: subtract for the border frame (2) and the column header row (1).
+		tH := max(bodyH-3, 3)
+		// Each column gets an equal slice of the width; subtract 2 per column for border.
+		colOuterW := msg.Width / zoningColumnCount
+		colInnerW := max(colOuterW-2, 10)
+		for i := range z.tbls {
+			z.tbls[i].SetHeight(tH)
+			z.tbls[i].SetWidth(colInnerW)
+			z.tbls[i].SetColumns([]table.Column{
+				{Title: zoningColumnStatuses[i], Width: colInnerW - 2},
+			})
+		}
+		return z, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "s":
-			z.statusFilter = (z.statusFilter + 1) % 5
-			z.recompute()
+		case "tab":
+			z.tbls[z.focus].Blur()
+			z.focus = (z.focus + 1) % zoningColumnCount
+			z.tbls[z.focus].Focus()
 			return z, nil
-		case "o":
-			if z.sortBy == zoningSortTown {
-				z.sortBy = zoningSortStatus
+		case "shift+tab":
+			z.tbls[z.focus].Blur()
+			z.focus = (z.focus - 1 + zoningColumnCount) % zoningColumnCount
+			z.tbls[z.focus].Focus()
+			return z, nil
+		case "s":
+			if z.sortOrder == zoningSortAsc {
+				z.sortOrder = zoningSortDesc
 			} else {
-				z.sortBy = zoningSortTown
+				z.sortOrder = zoningSortAsc
 			}
 			z.recompute()
 			return z, nil
@@ -205,29 +202,55 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return z, tea.Quit
 		}
 	}
+
+	// Forward nav keys to the focused column's table only.
 	var cmd tea.Cmd
-	z.tbl, cmd = z.tbl.Update(msg)
+	z.tbls[z.focus], cmd = z.tbls[z.focus].Update(msg)
 	return z, cmd
 }
 
 func (z *ZoningBrowser) View() tea.View {
 	header := renderAppHeader(z.width, z.activePage)
-	status := z.renderStatusLine()
+	summary := z.renderSummary()
 	footer := z.renderHelp()
 
-	body := z.tbl.View()
-	if z.loadErr != nil {
-		body = "load error: " + z.loadErr.Error()
+	if z.width < 80 || z.height < 20 {
+		small := lipgloss.NewStyle().Width(z.width).Height(max(z.height-2, 1)).
+			Align(lipgloss.Center, lipgloss.Center).
+			Render("window too small")
+		return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, small, footer))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, status, body, footer)
-	return tea.NewView(content)
+	colOuterW := z.width / zoningColumnCount
+	rendered := make([]string, zoningColumnCount)
+	for i := range z.tbls {
+		borderColor := lipgloss.Color("6")
+		if i == z.focus {
+			borderColor = lipgloss.Color("3")
+		}
+		rendered[i] = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(borderColor).
+			Width(colOuterW - 2).
+			Render(z.tbls[i].View())
+	}
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, summary, body, footer))
 }
 
-func (z *ZoningBrowser) renderStatusLine() string {
-	filter := []string{"All", "Approved", "Prohibited", "Moratorium", "Unknown"}[z.statusFilter]
-	sortName := []string{"Town", "Status"}[z.sortBy]
-	line := fmt.Sprintf("Status: %s  ·  Sort: %s  ·  %d rows", filter, sortName, len(z.view))
+func (z *ZoningBrowser) renderSummary() string {
+	if z.loadErr != nil {
+		return lipgloss.NewStyle().Width(z.width).Render("load error: " + z.loadErr.Error())
+	}
+	total := 0
+	for _, c := range z.cols {
+		total += len(c)
+	}
+	line := fmt.Sprintf(
+		"%d towns: %d approved · %d prohibited · %d moratorium · %d unknown",
+		total, len(z.cols[0]), len(z.cols[1]), len(z.cols[2]), len(z.cols[3]),
+	)
 	return lipgloss.NewStyle().
 		Width(z.width).
 		Foreground(lipgloss.Color("252")).

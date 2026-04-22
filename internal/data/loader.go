@@ -574,12 +574,15 @@ func (l *Loader) LoadSalesHistory(start, end time.Time) ([]models.SalesRecord, e
 
 // LoadZoning returns every row from ct_zoning, ordered by town. NULL status
 // values come back as empty strings.
+// The source CT API returns the literal string "null" for unreported
+// statuses (not a SQL NULL), so NULLIF maps it back to NULL before
+// COALESCE normalizes to an empty string.
 func (l *Loader) LoadZoning() ([]models.ZoningRow, error) {
 	if l.db == nil {
 		return nil, fmt.Errorf("database not open")
 	}
 	rows, err := l.db.Query(`
-		SELECT town, COALESCE(status, '')
+		SELECT town, COALESCE(NULLIF(status, 'null'), '')
 		FROM ct_zoning
 		ORDER BY town
 	`)

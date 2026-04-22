@@ -7,45 +7,70 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
-func TestRecomputeZoningFilter(t *testing.T) {
+func TestZoningColumnRows(t *testing.T) {
 	all := []models.ZoningRow{
 		{Town: "Ansonia", Status: "Approved"},
 		{Town: "Avon", Status: "Prohibited"},
 		{Town: "Bethany", Status: "Moratorium"},
-		{Town: "Andover", Status: ""}, // NULL -> Unknown
+		{Town: "Andover", Status: ""},
 		{Town: "Bristol", Status: "Approved"},
+		{Town: "Barkhamsted", Status: ""},
 	}
 
 	tests := []struct {
-		name   string
-		filter zoningStatusFilter
-		sort   zoningSortKey
-		want   []string // expected town order
+		name  string
+		order zoningSortOrder
+		want  [zoningColumnCount][]string
 	}{
-		{"all, sort by town", zoningFilterAll, zoningSortTown,
-			[]string{"Andover", "Ansonia", "Avon", "Bethany", "Bristol"}},
-		{"approved only", zoningFilterApproved, zoningSortTown,
-			[]string{"Ansonia", "Bristol"}},
-		{"prohibited only", zoningFilterProhibited, zoningSortTown,
-			[]string{"Avon"}},
-		{"moratorium only", zoningFilterMoratorium, zoningSortTown,
-			[]string{"Bethany"}},
-		{"unknown only", zoningFilterUnknown, zoningSortTown,
-			[]string{"Andover"}},
-		{"sort by status then town", zoningFilterAll, zoningSortStatus,
-			[]string{"Ansonia", "Bristol", "Bethany", "Avon", "Andover"}},
+		{
+			name:  "asc",
+			order: zoningSortAsc,
+			want: [zoningColumnCount][]string{
+				{"Ansonia", "Bristol"},     // Approved
+				{"Avon"},                   // Prohibited
+				{"Bethany"},               // Moratorium
+				{"Andover", "Barkhamsted"}, // Unknown
+			},
+		},
+		{
+			name:  "desc",
+			order: zoningSortDesc,
+			want: [zoningColumnCount][]string{
+				{"Bristol", "Ansonia"},
+				{"Avon"},
+				{"Bethany"},
+				{"Barkhamsted", "Andover"},
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := recomputeZoning(all, tc.filter, tc.sort)
-			var gotTowns []string
-			for _, r := range got {
-				gotTowns = append(gotTowns, r.Town)
+			got := zoningColumnRows(all, tc.order)
+			var gotTowns [zoningColumnCount][]string
+			for i, col := range got {
+				for _, r := range col {
+					gotTowns[i] = append(gotTowns[i], r.Town)
+				}
 			}
 			if !reflect.DeepEqual(gotTowns, tc.want) {
 				t.Fatalf("got %v, want %v", gotTowns, tc.want)
 			}
 		})
+	}
+}
+
+func TestZoningColumnIndex(t *testing.T) {
+	cases := map[string]int{
+		"Approved":   0,
+		"Prohibited": 1,
+		"Moratorium": 2,
+		"":           3,
+		"Bogus":      3, // unrecognized falls through to Unknown
+	}
+	for in, want := range cases {
+		if got := zoningColumnIndex(in); got != want {
+			t.Errorf("zoningColumnIndex(%q) = %d, want %d", in, got, want)
+		}
 	}
 }
