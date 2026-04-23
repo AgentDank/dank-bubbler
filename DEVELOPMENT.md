@@ -5,7 +5,7 @@
 ```
 dank-bubbler/
 ├── cmd/
-│   └── brand-demo/        # Brand product browser demo
+│   └── dank-bubbler-ct/   # CT cannabis data browser
 ├── internal/
 │   ├── data/              # Data loading and DuckDB integration
 │   ├── models/            # Data models
@@ -43,16 +43,16 @@ dank-bubbler/
 |------|-------------|
 | `task` | Show available tasks (default) |
 | `task build` | Build all tools |
-| `task build-demo` | Build brand-demo tool |
+| `task build-demo` | Build dank-bubbler-ct tool |
 | `task clean` | Remove build artifacts |
 | `task install` | Install tools into $GOPATH/bin |
 | `task test` | Run tests |
 | `task lint` | Run golangci-lint |
 | `task fmt` | Format code |
 | `task tidy` | Tidy go.mod |
-| `task run -- --db <path>` | Run brand-demo with database path |
+| `task run -- --db <path>` | Run dank-bubbler-ct with database path |
 
-## **Build the brand-demo**:
+## **Build the dank-bubbler-ct**:
    ```bash
    task build-demo
    # or run all builds
@@ -85,7 +85,7 @@ dank-bubbler/
 ## Next Steps
 
 1. Set up DuckDB Go driver
-2. Implement data loader for brands database
+2. Implement data loader for products database
 3. Build ProductBrowser UI component
 4. Implement compound chart using NTCharts
 5. Create filtering views (by brand, type, date)

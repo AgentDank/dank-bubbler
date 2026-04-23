@@ -8,9 +8,10 @@ This project helps integrate AgentDank functionality into Golang [BubbleTea](htt
 
 ## Projects
 
-### Brand Demo
+### Product Demo
 
-A demo application showcasing a product browser for the brands database table.
+A demo application showcasing a product browser for the Connecticut cannabis
+dataset.
 
 **Features:**
 - Product browsing by brand, name, cannabis type, or date
@@ -34,7 +35,7 @@ task build        # Build all tools
 task test         # Run tests
 task fmt          # Format code
 task lint         # Run linter
-task run -- --db <path>  # Run brand-demo
+task run -- --db <path>  # Run dank-bubbler-ct
 ```
 
 ## Dependencies

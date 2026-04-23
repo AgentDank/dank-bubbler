@@ -20,8 +20,9 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
-// brandsUpstreamURL points to the CT.gov dataset that feeds the brands table.
-const brandsUpstreamURL = "https://data.ct.gov/Health-and-Human-Services/Medical-Marijuana-and-Adult-Use-Cannabis-Product-R/egd5-wb6r"
+// productsUpstreamURL points to the CT.gov dataset that feeds the products
+// table (medical + adult-use product registrations).
+const productsUpstreamURL = "https://data.ct.gov/Health-and-Human-Services/Medical-Marijuana-and-Adult-Use-Cannabis-Product-R/egd5-wb6r"
 
 // ProductBrowser is a BubbleTea component for browsing cannabis products
 type ProductBrowser struct {
@@ -346,7 +347,7 @@ func (pb *ProductBrowser) renderPageFooterBar() string {
 	if pb.activeFilter != "" && pb.filterTitle != "" {
 		parts = append(parts, pb.filterTitle+": "+pb.activeFilter)
 	}
-	return renderPageFooter(pb.width, strings.Join(parts, "  ·  "), brandsUpstreamURL)
+	return renderPageFooter(pb.width, strings.Join(parts, "  ·  "), productsUpstreamURL)
 }
 
 func (pb *ProductBrowser) renderProductList(outerWidth, outerHeight int) string {
@@ -1103,8 +1104,8 @@ func (pb *ProductBrowser) loadProductsByDate(day string) ([]models.Product, erro
 }
 
 func (pb *ProductBrowser) middleHeight() int {
-	// header (1) + page footer (1) + help (1) + 1 safety = 4
-	return max(pb.height-4, 0)
+	// header (1) + page footer (1) + help (1) = 3
+	return max(pb.height-3, 0)
 }
 
 func (pb *ProductBrowser) paneWidths() (int, int) {

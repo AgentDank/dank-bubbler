@@ -1,4 +1,4 @@
-// Brand Demo - A BubbleTea-based product browser for cannabis brands
+// Product Demo - A BubbleTea-based product browser for CT cannabis data
 package main
 
 import (
@@ -19,13 +19,15 @@ import (
 const (
 	version           = "0.0.1"
 	defaultDBPath     = "dank-data.duckdb"
-	brandsDatabaseURL = "https://github.com/AgentDank/dank-data/raw/main/snapshots/us/ct/dank-data.duckdb.zst"
+	productsDatabaseURL = "https://github.com/AgentDank/dank-data/raw/main/snapshots/us/ct/dank-data.duckdb.zst"
 )
 
 var usageFormat = `usage:  %s [--help] [options]
 
-A product browser for cannabis brands based on the dank-data repository.
-Browse products by brand, name, cannabis type, or date.
+A BubbleTea-based browser for Connecticut cannabis data from the dank-data
+repository. Browse products by brand, name, cannabis type, or date; view
+retail locations on a map; inspect weekly sales and monthly tax totals; and
+browse town zoning statuses.
 
 Features:
   - Browse cannabis products with filtering
@@ -34,8 +36,8 @@ Features:
   - Data from dank-data repository (DuckDB format)
   - Automatic download of database if not present
 
-Example:  $ db-brand-demo
-          $ db-brand-demo --db custom-brands.duckdb
+Example:  $ dank-bubbler-ct
+          $ dank-bubbler-ct --db custom-cannabis.duckdb
 
 `
 
@@ -61,7 +63,7 @@ func (m model) View() tea.View {
 
 // downloadDatabase downloads the zstd-compressed DuckDB file and decompresses it
 func downloadDatabase(url, targetPath string) error {
-	fmt.Fprintf(os.Stderr, "Downloading brands database...\n")
+	fmt.Fprintf(os.Stderr, "Downloading cannabis database...\n")
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -96,12 +98,12 @@ func downloadDatabase(url, targetPath string) error {
 	return nil
 }
 
-// ensureDatabase ensures the database exists and has the current brands table.
+// ensureDatabase ensures the database exists and has the current products table.
 func ensureDatabase(dbPath string) error {
 	// If database doesn't exist, download it
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Database not found at %s\n", dbPath)
-		return downloadDatabase(brandsDatabaseURL, dbPath)
+		return downloadDatabase(productsDatabaseURL, dbPath)
 	}
 
 	// Check if brands table exists
@@ -119,7 +121,7 @@ func ensureDatabase(dbPath string) error {
 	if !hasBrands {
 		fmt.Fprintf(os.Stderr, "%s table not found, downloading fresh database...\n", "ct_brands")
 		_ = os.Remove(dbPath)
-		return downloadDatabase(brandsDatabaseURL, dbPath)
+		return downloadDatabase(productsDatabaseURL, dbPath)
 	}
 
 	return nil
@@ -142,7 +144,7 @@ func main() {
 	}
 
 	if showVersion {
-		_, _ = fmt.Fprintf(os.Stdout, "brand-demo v%s\n", version)
+		_, _ = fmt.Fprintf(os.Stdout, "dank-bubbler-ct v%s\n", version)
 		os.Exit(0)
 	}
 
@@ -176,7 +178,7 @@ func main() {
 	defer func() { _ = loader.Close() }()
 
 	if verbose {
-		fmt.Fprintf(os.Stderr, "INFO: Loading brands and products...\n")
+		fmt.Fprintf(os.Stderr, "INFO: Loading products and brands...\n")
 	}
 
 	products, err := loader.LoadProducts()

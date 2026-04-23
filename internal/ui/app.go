@@ -12,7 +12,7 @@ import (
 type Page int
 
 const (
-	PageBrands Page = iota
+	PageProducts Page = iota
 	PageSalesTax
 	PageZoning
 	PageRetail
@@ -23,7 +23,7 @@ var pageTabs = []struct {
 	key   string
 	label string
 }{
-	{"1", "Brands"},
+	{"1", "Products"},
 	{"2", "Sales & Tax"},
 	{"3", "Zoning"},
 	{"4", "Retail"},
@@ -33,7 +33,7 @@ var pageTabs = []struct {
 // routes input to the active one, plus handles page-switching hotkeys.
 type AppModel struct {
 	page       Page
-	brands     *ProductBrowser
+	products   *ProductBrowser
 	salesTax   *SalesTaxBrowser
 	zoning     *ZoningBrowser
 	retail     *RetailBrowser
@@ -43,8 +43,8 @@ type AppModel struct {
 // NewAppModel wires the pages.
 func NewAppModel(products []models.Product, brands []models.Brand, loader *data.Loader) *AppModel {
 	a := &AppModel{
-		page:     PageBrands,
-		brands:   NewProductBrowser(products, brands, loader),
+		page:     PageProducts,
+		products: NewProductBrowser(products, brands, loader),
 		salesTax: NewSalesTaxBrowser(loader),
 		zoning:   NewZoningBrowser(loader),
 		retail:   NewRetailBrowser(loader),
@@ -54,14 +54,14 @@ func NewAppModel(products []models.Product, brands []models.Brand, loader *data.
 }
 
 func (a *AppModel) syncActivePage() {
-	a.brands.SetActivePage(a.page)
+	a.products.SetActivePage(a.page)
 	a.salesTax.SetActivePage(a.page)
 	a.zoning.SetActivePage(a.page)
 	a.retail.SetActivePage(a.page)
 }
 
 func (a *AppModel) Init() tea.Cmd {
-	return tea.Batch(a.brands.Init(), a.salesTax.Init(), a.zoning.Init(), a.retail.Init())
+	return tea.Batch(a.products.Init(), a.salesTax.Init(), a.zoning.Init(), a.retail.Init())
 }
 
 func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -70,7 +70,7 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.lastResize = msg
 		// Forward size changes to all pages so the inactive pages are ready
 		// when the user switches.
-		_, cmdA := a.brands.Update(msg)
+		_, cmdA := a.products.Update(msg)
 		_, cmdB := a.salesTax.Update(msg)
 		_, cmdC := a.zoning.Update(msg)
 		_, cmdD := a.retail.Update(msg)
@@ -79,7 +79,7 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "1":
-			a.page = PageBrands
+			a.page = PageProducts
 			a.syncActivePage()
 			return a, nil
 		case "2":
@@ -112,8 +112,8 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a *AppModel) forwardToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch a.page {
-	case PageBrands:
-		_, cmd = a.brands.Update(msg)
+	case PageProducts:
+		_, cmd = a.products.Update(msg)
 	case PageSalesTax:
 		_, cmd = a.salesTax.Update(msg)
 	case PageZoning:
@@ -133,6 +133,6 @@ func (a *AppModel) View() tea.View {
 	case PageRetail:
 		return a.retail.View()
 	default:
-		return a.brands.View()
+		return a.products.View()
 	}
 }
