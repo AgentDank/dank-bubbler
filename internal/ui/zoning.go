@@ -235,8 +235,10 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			filterH = 1
 		}
 		bodyH := max(msg.Height-4-filterH, 4)
-		// Each column: subtract for the border frame (2) and the column header row (1).
-		tH := max(bodyH-3, 3)
+		// Each column's rendered block = table.View() (tH lines, header included
+		// in the viewport) + 2 for the top/bottom border. We want that block to
+		// be exactly bodyH tall, so tH = bodyH - 2.
+		tH := max(bodyH-2, 3)
 		// Each column gets an equal slice of the width; subtract 2 per column for border.
 		colOuterW := msg.Width / zoningColumnCount
 		colInnerW := max(colOuterW-2, 10)

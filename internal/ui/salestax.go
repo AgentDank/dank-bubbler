@@ -190,8 +190,8 @@ func (s *SalesTaxBrowser) reload() {
 func (s *SalesTaxBrowser) View() tea.View {
 	header := s.renderHeader()
 	footer := s.renderHelp()
-	// header (1) + page footer (1) + help (1) + 1 safety = 4
-	middleHeight := max(s.height-4, 0)
+	// header (1) + page footer (1) + help (1) = 3
+	middleHeight := max(s.height-3, 0)
 
 	revenueH := middleHeight * 2 / 5
 	productsH := middleHeight / 3
