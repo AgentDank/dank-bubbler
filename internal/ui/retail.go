@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -24,7 +25,7 @@ var (
 
 const (
 	retailMarkerSize         = 10
-	retailSelectedMarkerSize = 22
+	retailSelectedMarkerSize = 8 // small red dot that sits on top of the selected row's blue
 )
 
 // retailTypeFilter selects which retail locations the page shows.
@@ -37,35 +38,87 @@ const (
 	retailFilterMedicalOnly
 )
 
-// retailSortKey selects the list's row order.
+// retailSortKey selects the list's row order. The cycle runs
+//
+//	DBA desc → DBA asc → Business desc → Business asc → City asc → City desc
+//
+// and then wraps. The zero value is retailSortDBADesc so a freshly-created
+// browser starts on that step.
 type retailSortKey int
 
 const (
-	retailSortBusiness retailSortKey = iota
-	retailSortCity
+	retailSortDBAAsc retailSortKey = iota
+	retailSortDBADesc
+	retailSortBusinessAsc
+	retailSortBusinessDesc
+	retailSortCityAsc
+	retailSortCityDesc
+	retailSortCount
 )
 
-// recomputeRetail filters then sorts rows for the retail list.
-func recomputeRetail(all []models.RetailLocation, filter retailTypeFilter, key retailSortKey) []models.RetailLocation {
+// effectiveDBA returns the row's DBA, falling back to Business when DBA is
+// empty so sort and filter both treat them as equivalent (matches what the
+// list column renders).
+func effectiveDBA(r models.RetailLocation) string {
+	if r.DBA != "" {
+		return r.DBA
+	}
+	return r.Business
+}
+
+// recomputeRetail filters then sorts rows for the retail list. query is a
+// case-insensitive substring filter applied against DBA (or Business when
+// empty), Business, and City; an empty query disables the filter.
+func recomputeRetail(all []models.RetailLocation, filter retailTypeFilter, key retailSortKey, query string) []models.RetailLocation {
+	q := strings.ToLower(strings.TrimSpace(query))
 	out := make([]models.RetailLocation, 0, len(all))
 	for _, r := range all {
 		if !retailRowMatches(r, filter) {
 			continue
 		}
+		if q != "" && !retailMatchesQuery(r, q) {
+			continue
+		}
 		out = append(out, r)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
 		switch key {
-		case retailSortCity:
-			if out[i].City != out[j].City {
-				return out[i].City < out[j].City
+		case retailSortDBADesc:
+			if effectiveDBA(a) != effectiveDBA(b) {
+				return effectiveDBA(a) > effectiveDBA(b)
 			}
-			return out[i].Business < out[j].Business
-		default:
-			return out[i].Business < out[j].Business
+			return a.Business < b.Business
+		case retailSortDBAAsc:
+			if effectiveDBA(a) != effectiveDBA(b) {
+				return effectiveDBA(a) < effectiveDBA(b)
+			}
+			return a.Business < b.Business
+		case retailSortBusinessDesc:
+			return a.Business > b.Business
+		case retailSortBusinessAsc:
+			return a.Business < b.Business
+		case retailSortCityDesc:
+			if a.City != b.City {
+				return a.City > b.City
+			}
+			return a.Business < b.Business
+		default: // retailSortCityAsc
+			if a.City != b.City {
+				return a.City < b.City
+			}
+			return a.Business < b.Business
 		}
 	})
 	return out
+}
+
+// retailMatchesQuery reports whether any of (DBA, Business, City) contains
+// the lowercase substring q.
+func retailMatchesQuery(r models.RetailLocation, q string) bool {
+	return strings.Contains(strings.ToLower(effectiveDBA(r)), q) ||
+		strings.Contains(strings.ToLower(r.Business), q) ||
+		strings.Contains(strings.ToLower(r.City), q)
 }
 
 func retailRowMatches(r models.RetailLocation, filter retailTypeFilter) bool {
@@ -159,16 +212,21 @@ var (
 	retailCycleFilterKey = key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "type"))
 	retailToggleSortKey  = key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "sort"))
 	retailFocusKey       = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus"))
+	retailToggleGfxKey   = key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "gfx"))
+	retailZoomKey        = key.NewBinding(key.WithKeys("+", "=", "-", "_"), key.WithHelp("+/-", "zoom"))
+	retailSatelliteKey   = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sat"))
+	retailFilterKey      = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
+	retailResetKey       = key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "recenter"))
 )
 
 type retailHelpKeyMap struct{}
 
 func (retailHelpKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{pagesKey, moveKey, retailCycleFilterKey, retailToggleSortKey, retailFocusKey, quitKey}
+	return []key.Binding{pagesKey, moveKey, retailCycleFilterKey, retailToggleSortKey, retailFilterKey, retailFocusKey, retailToggleGfxKey, retailZoomKey, retailResetKey, retailSatelliteKey, quitKey}
 }
 
 func (retailHelpKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{pagesKey, moveKey, retailCycleFilterKey, retailToggleSortKey, retailFocusKey, quitKey}}
+	return [][]key.Binding{{pagesKey, moveKey, retailCycleFilterKey, retailToggleSortKey, retailFilterKey, retailFocusKey, retailToggleGfxKey, retailZoomKey, retailResetKey, retailSatelliteKey, quitKey}}
 }
 
 type RetailBrowser struct {
@@ -185,6 +243,10 @@ type RetailBrowser struct {
 	activePage    Page
 	loadErr       error
 	lastSelected  int
+
+	query     string          // committed filter substring
+	input     textinput.Model // prompt state when editing the query
+	inputOpen bool            // true while the user is editing the filter
 }
 
 func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
@@ -207,7 +269,8 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 		Foreground(lipgloss.Color("230"))
 	r.tbl = table.New(
 		table.WithColumns([]table.Column{
-			{Title: "Business", Width: 16},
+			{Title: "DBA", Width: 12},
+			{Title: "Business", Width: 12},
 			{Title: "City", Width: 16},
 			{Title: "Type", Width: 4},
 		}),
@@ -217,6 +280,13 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 	r.mv = mapview.New(40, 12) // replaced on first resize
 	// Center on CT until first selection lands.
 	r.mv.SetLatLng(41.6, -72.7, 8)
+
+	r.input = textinput.New()
+	r.input.Prompt = "/"
+	r.input.Placeholder = "business, dba, or city"
+	r.input.CharLimit = 128
+	r.input.SetVirtualCursor(true)
+
 	r.reload()
 	return r
 }
@@ -240,10 +310,14 @@ func (r *RetailBrowser) reload() {
 }
 
 func (r *RetailBrowser) recompute() {
-	r.view = recomputeRetail(r.all, r.typeFilter, r.sortBy)
+	r.view = recomputeRetail(r.all, r.typeFilter, r.sortBy, r.query)
 	tRows := make([]table.Row, 0, len(r.view))
 	for _, loc := range r.view {
-		tRows = append(tRows, table.Row{loc.Business, loc.City, retailTypeBadge(loc.Type)})
+		dba := loc.DBA
+		if dba == "" {
+			dba = loc.Business
+		}
+		tRows = append(tRows, table.Row{dba, loc.Business, loc.City, retailTypeBadge(loc.Type)})
 	}
 	r.tbl.SetRows(tRows)
 	r.lastSelected = -1 // force re-center on next Update
@@ -274,20 +348,32 @@ func (r *RetailBrowser) View() tea.View {
 	// Body layout: list (left) | map (right), then detail (2 rows), then help.
 	// listW formula must match the one in Update so the table inside fits.
 	detailH := 2
-	bodyH := max(r.height-1-detailH-1, 4) // header + detail + footer
+	filterH := 0
+	if r.inputOpen || r.query != "" {
+		filterH = 1
+	}
+	bodyH := max(r.height-1-filterH-detailH-1, 4) // header + filter? + detail + footer
 	listW := max(r.width/2, 40)
 	mapW := r.width - listW
 
+	listBorder := lipgloss.Color("6")
+	mapBorder := lipgloss.Color("6")
+	switch r.focus {
+	case focusList:
+		listBorder = lipgloss.Color("3")
+	case focusMap:
+		mapBorder = lipgloss.Color("3")
+	}
 	listStyled := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("6")).
+		BorderForeground(listBorder).
 		Width(listW).
 		Height(bodyH - 2).
 		Render(r.tbl.View())
 
 	mapStyled := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("6")).
+		BorderForeground(mapBorder).
 		Width(mapW).
 		Height(bodyH - 2).
 		Render(r.mv.View().Content)
@@ -296,7 +382,34 @@ func (r *RetailBrowser) View() tea.View {
 
 	detail := r.renderDetailBar(r.width, detailH)
 
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, body, detail, footer))
+	pieces := []string{header, body}
+	if filterH > 0 {
+		pieces = append(pieces, r.renderFilterRow(r.width))
+	}
+	pieces = append(pieces, detail, footer)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, pieces...))
+}
+
+// relayout reruns the WindowSize-driven layout math with the current
+// width/height. Use this after state changes (e.g. filter row appearing) that
+// should resize the table/map. Safe to call before the first real resize,
+// since it's a no-op when width is zero.
+func (r *RetailBrowser) relayout() {
+	if r.width == 0 || r.height == 0 {
+		return
+	}
+	r.Update(tea.WindowSizeMsg{Width: r.width, Height: r.height})
+}
+
+func (r *RetailBrowser) renderFilterRow(width int) string {
+	style := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(1)
+	if r.inputOpen {
+		r.input.SetWidth(max(width-2, 8))
+		return style.Render(r.input.View())
+	}
+	return style.
+		Foreground(lipgloss.Color("245")).
+		Render("filter: " + r.query + "  (/: edit, esc-from-/: clear)")
 }
 
 func (r *RetailBrowser) renderDetailBar(width, _ int) string {
@@ -335,6 +448,38 @@ func (r *RetailBrowser) renderHelp() string {
 }
 
 func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When the filter prompt is open, it owns the keyboard: ESC cancels,
+	// Enter commits, everything else edits. Non-KeyMsg messages continue
+	// to fall through to the normal handlers so map renders still land.
+	if r.inputOpen {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "esc":
+				hadQuery := r.query != ""
+				r.inputOpen = false
+				r.input.Blur()
+				// Clear any committed query when ESC is used — a common mental
+				// model ("ESC means nevermind, back to unfiltered").
+				if hadQuery {
+					r.query = ""
+					r.recompute()
+				}
+				r.relayout()
+				return r, nil
+			case "enter":
+				r.inputOpen = false
+				r.input.Blur()
+				r.query = r.input.Value()
+				r.recompute()
+				r.relayout()
+				return r, r.centerMapOnSelectionIfChanged(true)
+			}
+			var cmd tea.Cmd
+			r.input, cmd = r.input.Update(msg)
+			return r, cmd
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		r.width = msg.Width
@@ -342,24 +487,32 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.help.SetWidth(msg.Width)
 
 		detailH := 2
-		bodyH := max(r.height-1-detailH-1, 4)
+		filterH := 0
+		if r.inputOpen || r.query != "" {
+			filterH = 1
+		}
+		bodyH := max(r.height-1-filterH-detailH-1, 4)
 		listW := max(r.width/2, 40)
 		mapW := r.width - listW
 
 		// listStyled has outer width listW with a Border, so its content
 		// area is (listW-2). The table render uses that full content width
-		// and its 3 cells each consume +2 chars of Padding(0,1), so the
-		// per-cell content budget is (listW - 2 - 6).
+		// and its 4 cells each consume +2 chars of Padding(0,1), so the
+		// per-cell content budget is (listW - 2 - 8).
 		const (
 			cityW = 16
 			typeW = 4 // header "Type" is 4 chars; badges HYB/AU/MED fit in 3
 		)
 		tblW := max(listW-2, 10)
-		businessW := max(tblW-6-cityW-typeW, 8)
+		// Split remaining space between DBA and Business, clipping long names.
+		nameBudget := max(tblW-8-cityW-typeW, 8)
+		dbaW := max(nameBudget/2, 4)
+		businessW := max(nameBudget-dbaW, 4)
 
 		r.tbl.SetHeight(max(bodyH-4, 3))
 		r.tbl.SetWidth(tblW)
 		r.tbl.SetColumns([]table.Column{
+			{Title: "DBA", Width: dbaW},
 			{Title: "Business", Width: businessW},
 			{Title: "City", Width: cityW},
 			{Title: "Type", Width: typeW},
@@ -385,13 +538,54 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			r.recompute()
 			return r, r.centerMapOnSelectionIfChanged(true)
 		case "o":
-			if r.sortBy == retailSortBusiness {
-				r.sortBy = retailSortCity
-			} else {
-				r.sortBy = retailSortBusiness
-			}
+			r.sortBy = (r.sortBy + 1) % retailSortCount
 			r.recompute()
 			return r, r.centerMapOnSelectionIfChanged(true)
+		case "g":
+			mode := mapview.RenderGlyph
+			if r.mv.RenderMode() == mapview.RenderGlyph {
+				mode = mapview.RenderKitty
+			}
+			return r, r.mv.SetRenderMode(mode)
+		case "s":
+			style := mapview.OpenStreetMaps
+			if r.mv.TileStyle() == mapview.OpenStreetMaps {
+				style = mapview.ArcgisWorldImagery
+			}
+			return r, r.mv.SetStyle(style)
+		case "/":
+			r.input.SetValue(r.query)
+			r.input.CursorEnd()
+			r.inputOpen = true
+			r.relayout()
+			return r, r.input.Focus()
+		case "r":
+			// Snap the map back to the selected retailer. Forces a re-center
+			// even if the cursor hasn't moved, so it also works as an "undo
+			// my panning" shortcut.
+			return r, r.centerMapOnSelectionIfChanged(true)
+		case "+", "=", "-", "_":
+			// Zoom centered on the selected retailer if there is one, otherwise
+			// around the current map center. Clamp to mapview's [2, 16] range.
+			delta := 1
+			if msg.String() == "-" || msg.String() == "_" {
+				delta = -1
+			}
+			newZoom := r.mv.Zoom() + delta
+			if newZoom < 2 {
+				newZoom = 2
+			}
+			if newZoom > 16 {
+				newZoom = 16
+			}
+			lat, lng := r.mv.Center()
+			if loc, ok := r.selectedLocation(); ok && (loc.Latitude != 0 || loc.Longitude != 0) {
+				lat, lng = loc.Latitude, loc.Longitude
+			}
+			r.mv.SetLatLng(lat, lng, newZoom)
+			var cmd tea.Cmd
+			r.mv, cmd = r.mv.Update(mapview.MapCoordinates{Lat: lat, Lng: lng})
+			return r, cmd
 		case "ctrl+c", "q":
 			return r, tea.Quit
 		}
@@ -400,8 +594,7 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Mapview output messages must reach r.mv regardless of which pane has
 	// focus, otherwise the new render never updates r.mv.maprender and the
 	// displayed image goes stale.
-	switch msg.(type) {
-	case mapview.MapRender, mapview.MapCoordinates:
+	if mapview.IsMapUpdate(msg) {
 		var cmd tea.Cmd
 		r.mv, cmd = r.mv.Update(msg)
 		return r, cmd
@@ -452,23 +645,14 @@ func (r *RetailBrowser) centerMapOnSelectionIfChanged(force bool) tea.Cmd {
 }
 
 // applyRetailMarkers syncs the map's marker set with the current filtered
-// view. Non-selected retailers get a small blue dot; the row under the cursor
-// gets a larger red-orange dot and is drawn last so it paints on top.
+// view. Every retailer gets a small blue dot; the selected row also gets a
+// smaller red dot drawn on top of its blue so the selection is obvious.
 func (r *RetailBrowser) applyRetailMarkers() {
 	selectedIdx := r.tbl.Cursor()
-	markers := make([]mapview.Marker, 0, len(r.view))
+	markers := make([]mapview.Marker, 0, len(r.view)+1)
 	var selected *mapview.Marker
 	for i, loc := range r.view {
 		if loc.Latitude == 0 && loc.Longitude == 0 {
-			continue
-		}
-		if i == selectedIdx {
-			selected = &mapview.Marker{
-				Lat:   loc.Latitude,
-				Lng:   loc.Longitude,
-				Color: retailSelectedMarkerColor,
-				Size:  retailSelectedMarkerSize,
-			}
 			continue
 		}
 		markers = append(markers, mapview.Marker{
@@ -477,6 +661,14 @@ func (r *RetailBrowser) applyRetailMarkers() {
 			Color: retailMarkerColor,
 			Size:  retailMarkerSize,
 		})
+		if i == selectedIdx {
+			selected = &mapview.Marker{
+				Lat:   loc.Latitude,
+				Lng:   loc.Longitude,
+				Color: retailSelectedMarkerColor,
+				Size:  retailSelectedMarkerSize,
+			}
+		}
 	}
 	if selected != nil {
 		markers = append(markers, *selected)

@@ -83,23 +83,32 @@ func TestRecomputeRetail(t *testing.T) {
 		name   string
 		filter retailTypeFilter
 		sort   retailSortKey
+		query  string
 		want   []string // expected Business order
 	}{
-		{"all, sort by business", retailFilterAll, retailSortBusiness,
+		{"all, business asc", retailFilterAll, retailSortBusinessAsc, "",
 			[]string{"ACME", "Best", "Carlos", "Delta", "Echo"}},
-		{"hybrid only", retailFilterHybrid, retailSortBusiness,
+		{"all, business desc", retailFilterAll, retailSortBusinessDesc, "",
+			[]string{"Echo", "Delta", "Carlos", "Best", "ACME"}},
+		{"hybrid only", retailFilterHybrid, retailSortBusinessAsc, "",
 			[]string{"ACME", "Carlos", "Echo"}},
-		{"adult-use only", retailFilterAdultUseOnly, retailSortBusiness,
+		{"adult-use only", retailFilterAdultUseOnly, retailSortBusinessAsc, "",
 			[]string{"Best"}},
-		{"medical only", retailFilterMedicalOnly, retailSortBusiness,
+		{"medical only", retailFilterMedicalOnly, retailSortBusinessAsc, "",
 			[]string{"Delta"}},
-		{"sort by city", retailFilterAll, retailSortCity,
+		{"city asc", retailFilterAll, retailSortCityAsc, "",
 			[]string{"Delta", "Echo", "Best", "Carlos", "ACME"}},
+		{"city desc", retailFilterAll, retailSortCityDesc, "",
+			[]string{"ACME", "Best", "Carlos", "Delta", "Echo"}},
+		{"query matches city substring", retailFilterAll, retailSortBusinessAsc, "bristol",
+			[]string{"Best", "Carlos"}},
+		{"query matches business substring case-insensitive", retailFilterAll, retailSortBusinessAsc, "cme",
+			[]string{"ACME"}},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := recomputeRetail(all, tc.filter, tc.sort)
+			got := recomputeRetail(all, tc.filter, tc.sort, tc.query)
 			var gotBiz []string
 			for _, r := range got {
 				gotBiz = append(gotBiz, r.Business)

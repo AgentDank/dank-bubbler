@@ -5,6 +5,7 @@ import (
 
 	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
+	"github.com/AgentDank/dank-bubbler/mapview"
 )
 
 // Page identifies a top-level tab in the application.
@@ -94,6 +95,15 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.syncActivePage()
 			return a, nil
 		}
+	}
+
+	// Mapview-originated messages (async render results) must reach the retail
+	// page regardless of which page is currently active — otherwise the result
+	// of the initial WindowSize-triggered render goes to the wrong page and
+	// the map stays blank until the user nudges retail into rendering again.
+	if mapview.IsMapUpdate(msg) {
+		_, cmd := a.retail.Update(msg)
+		return a, cmd
 	}
 
 	return a.forwardToActive(msg)
