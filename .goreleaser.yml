@@ -16,6 +16,35 @@ builds:
     binary: dank-bubbler-ct
     ldflags:
       - -s -w -X github.com/AgentDank/dank-bubbler/internal/version.Version={{.Version}}
+    # duckdb-go-bindings is CGO-only; each platform subpackage has an
+    # untagged `import "C"` so CGO_ENABLED must be 1 for every target.
+    # CC/CXX names below match the toolchains in ghcr.io/goreleaser/goreleaser-cross.
+    env:
+      - CGO_ENABLED=1
+      - >-
+        {{- if eq .Os "linux" }}
+        {{- if eq .Arch "amd64" }}CC=x86_64-linux-gnu-gcc{{- end }}
+        {{- if eq .Arch "arm64" }}CC=aarch64-linux-gnu-gcc{{- end }}
+        {{- end }}
+        {{- if eq .Os "darwin" }}
+        {{- if eq .Arch "amd64" }}CC=o64-clang{{- end }}
+        {{- if eq .Arch "arm64" }}CC=oa64-clang{{- end }}
+        {{- end }}
+        {{- if eq .Os "windows" }}
+        {{- if eq .Arch "amd64" }}CC=x86_64-w64-mingw32-gcc{{- end }}
+        {{- end }}
+      - >-
+        {{- if eq .Os "linux" }}
+        {{- if eq .Arch "amd64" }}CXX=x86_64-linux-gnu-g++{{- end }}
+        {{- if eq .Arch "arm64" }}CXX=aarch64-linux-gnu-g++{{- end }}
+        {{- end }}
+        {{- if eq .Os "darwin" }}
+        {{- if eq .Arch "amd64" }}CXX=o64-clang++{{- end }}
+        {{- if eq .Arch "arm64" }}CXX=oa64-clang++{{- end }}
+        {{- end }}
+        {{- if eq .Os "windows" }}
+        {{- if eq .Arch "amd64" }}CXX=x86_64-w64-mingw32-g++{{- end }}
+        {{- end }}
     goarch:
       # duckdb-go only supports these
       - amd64
