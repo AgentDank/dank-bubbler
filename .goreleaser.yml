@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# .goreleaser.yml
+# CGO-free release builds for go-booba CLI utilities.
+
+version: 2
+
+project_name: dank-bubbler
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dank-bubbler-ct
+    main: ./cmd/dank-bubbler-ct
+    binary: dank-bubbler-ct
+    goarch:
+      # duckdb-go only supports these
+      - amd64
+      - arm64
+    goos:
+      - linux
+      - darwin
+      - windows
+    ignore:
+      # duckdb-go does not support these
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE.txt
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - dank-bubbler-ct
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+        entitlements: ./etc/entitlements.plist
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+        wait: true
+        timeout: 20m
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"

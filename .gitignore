@@ -19,6 +19,7 @@ vendor/
 go.work
 
 # Build output
+/dist/
 /bin/
 /kitty-probe
 

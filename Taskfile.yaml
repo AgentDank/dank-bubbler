@@ -47,3 +47,22 @@ tasks:
     deps: [build]
     cmds:
       - ./bin/dank-bubbler-ct {{.CLI_ARGS}}
+
+###############################################################################
+
+  goreleaser:check:
+    desc: 'Validate GoReleaser configuration'
+    cmds:
+      - goreleaser check
+
+  goreleaser:build:
+    desc: 'Build binary for current platform only (fast, no publish)'
+    deps: [goreleaser:check]
+    cmds:
+      - goreleaser build --snapshot --clean --single-target
+
+  goreleaser:snapshot:
+    desc: 'Build full local snapshot (archives, checksums, no publish). Requires CGO cross-compilers for non-host targets.'
+    deps: [goreleaser:check]
+    cmds:
+      - goreleaser release --snapshot --clean

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v6
+
+      - uses: go-task/setup-task@v2
+
+      - name: Build assets
+        run: task build
+
+      - name: Test
+        run: task test
+
+      - name: gofmt
+        run: |
+          fmt_files=$(gofmt -l .)
+          if [ -n "$fmt_files" ]; then
+            echo "gofmt would reformat the following files:"
+            echo "$fmt_files"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build
+        run: task build
+
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
