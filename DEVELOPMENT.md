@@ -12,7 +12,6 @@ dank-bubbler/
 │   └── ui/                # BubbleTea UI components
 ├── assets/                # Static assets and data
 ├── tests/                 # Test fixtures and data
-├── dankbubbler.go         # Main package definition
 ├── go.mod
 ├── Taskfile.yaml          # Task automation
 └── README.md

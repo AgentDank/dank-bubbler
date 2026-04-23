@@ -14,10 +14,10 @@ import (
 
 	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/ui"
+	"github.com/AgentDank/dank-bubbler/internal/version"
 )
 
 const (
-	version             = "0.0.1"
 	defaultDBPath       = "dank-data.duckdb"
 	productsDatabaseURL = "https://github.com/AgentDank/dank-data/raw/main/snapshots/us/ct/dank-data.duckdb.zst"
 )
@@ -144,7 +144,7 @@ func main() {
 	}
 
 	if showVersion {
-		_, _ = fmt.Fprintf(os.Stdout, "dank-bubbler-ct v%s\n", version)
+		_, _ = fmt.Fprintf(os.Stdout, "dank-bubbler-ct v%s\n", version.Get())
 		os.Exit(0)
 	}
 
