@@ -3,10 +3,12 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -35,10 +37,16 @@ var zoningColumnStatuses = [zoningColumnCount]string{
 
 // zoningColumnRows partitions `all` into one slice per status column (in
 // zoningColumnStatuses order) and sorts each slice by town in `order`
-// direction. Empty status values are bucketed as "Unknown" (index 3).
-func zoningColumnRows(all []models.ZoningRow, order zoningSortOrder) [zoningColumnCount][]models.ZoningRow {
+// direction. Empty status values are bucketed as "Unknown" (index 3). When
+// query is non-empty, rows whose town does not contain the (case-insensitive)
+// substring are dropped before partitioning.
+func zoningColumnRows(all []models.ZoningRow, order zoningSortOrder, query string) [zoningColumnCount][]models.ZoningRow {
+	q := strings.ToLower(strings.TrimSpace(query))
 	var cols [zoningColumnCount][]models.ZoningRow
 	for _, r := range all {
+		if q != "" && !strings.Contains(strings.ToLower(r.Town), q) {
+			continue
+		}
 		idx := zoningColumnIndex(r.Status)
 		cols[idx] = append(cols[idx], r)
 	}
@@ -77,16 +85,17 @@ func sortRows(rows []models.ZoningRow, order zoningSortOrder) {
 var (
 	zoningFocusKey    = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "focus"))
 	zoningSortKeyBind = key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort"))
+	zoningFilterKey   = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
 )
 
 type zoningHelpKeyMap struct{}
 
 func (zoningHelpKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{pagesKey, moveKey, zoningFocusKey, zoningSortKeyBind, quitKey}
+	return []key.Binding{pagesKey, moveKey, zoningFocusKey, zoningSortKeyBind, zoningFilterKey, quitKey}
 }
 
 func (zoningHelpKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{pagesKey, moveKey, zoningFocusKey, zoningSortKeyBind, quitKey}}
+	return [][]key.Binding{{pagesKey, moveKey, zoningFocusKey, zoningSortKeyBind, zoningFilterKey, quitKey}}
 }
 
 // ZoningBrowser shows four side-by-side tables, one per zoning status.
@@ -101,6 +110,10 @@ type ZoningBrowser struct {
 	help          help.Model
 	activePage    Page
 	loadErr       error
+
+	query     string          // committed filter substring
+	input     textinput.Model // prompt state when editing the query
+	inputOpen bool
 }
 
 func NewZoningBrowser(loader *data.Loader) *ZoningBrowser {
@@ -130,6 +143,12 @@ func NewZoningBrowser(loader *data.Loader) *ZoningBrowser {
 		)
 	}
 
+	z.input = textinput.New()
+	z.input.Prompt = "/"
+	z.input.Placeholder = "town name"
+	z.input.CharLimit = 128
+	z.input.SetVirtualCursor(true)
+
 	z.reload()
 	return z
 }
@@ -153,7 +172,7 @@ func (z *ZoningBrowser) reload() {
 }
 
 func (z *ZoningBrowser) recompute() {
-	z.cols = zoningColumnRows(z.all, z.sortOrder)
+	z.cols = zoningColumnRows(z.all, z.sortOrder, z.query)
 	for i := range z.cols {
 		tRows := make([]table.Row, 0, len(z.cols[i]))
 		for _, r := range z.cols[i] {
@@ -164,14 +183,55 @@ func (z *ZoningBrowser) recompute() {
 }
 
 func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When the filter prompt is open it owns the keyboard: ESC cancels (and
+	// clears any committed query), Enter commits, anything else edits.
+	if z.inputOpen {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "esc":
+				// ESC clears the committed query and closes the prompt.
+				hadQuery := z.query != ""
+				z.inputOpen = false
+				z.input.Blur()
+				if hadQuery {
+					z.query = ""
+					z.recompute()
+				}
+				z.relayout()
+				return z, nil
+			case "enter":
+				// Enter seals the live-search query — query is already
+				// applied, we just close the prompt.
+				z.inputOpen = false
+				z.input.Blur()
+				z.relayout()
+				return z, nil
+			}
+			// Live search: forward to textinput, then re-apply the filter
+			// immediately on any value change.
+			prev := z.input.Value()
+			var cmd tea.Cmd
+			z.input, cmd = z.input.Update(msg)
+			if z.input.Value() != prev {
+				z.query = z.input.Value()
+				z.recompute()
+			}
+			return z, cmd
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		z.width = msg.Width
 		z.height = msg.Height
 		z.help.SetWidth(msg.Width)
 
-		// Layout: header (1) + summary (1) + columns body + footer (1).
-		bodyH := max(msg.Height-3, 4)
+		// Layout: header (1) + summary (1) + filter? (1) + columns body + footer (1).
+		filterH := 0
+		if z.inputOpen || z.query != "" {
+			filterH = 1
+		}
+		bodyH := max(msg.Height-3-filterH, 4)
 		// Each column: subtract for the border frame (2) and the column header row (1).
 		tH := max(bodyH-3, 3)
 		// Each column gets an equal slice of the width; subtract 2 per column for border.
@@ -206,6 +266,12 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			z.recompute()
 			return z, nil
+		case "/":
+			z.input.SetValue(z.query)
+			z.input.CursorEnd()
+			z.inputOpen = true
+			z.relayout()
+			return z, z.input.Focus()
 		case "ctrl+c", "q":
 			return z, tea.Quit
 		}
@@ -215,6 +281,15 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	z.tbls[z.focus], cmd = z.tbls[z.focus].Update(msg)
 	return z, cmd
+}
+
+// relayout re-runs the WindowSize resize math with the current dimensions —
+// used after filter-row visibility toggles so the table heights re-sync.
+func (z *ZoningBrowser) relayout() {
+	if z.width == 0 || z.height == 0 {
+		return
+	}
+	z.Update(tea.WindowSizeMsg{Width: z.width, Height: z.height})
 }
 
 func (z *ZoningBrowser) View() tea.View {
@@ -244,7 +319,23 @@ func (z *ZoningBrowser) View() tea.View {
 	}
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, summary, body, footer))
+	pieces := []string{header, summary, body}
+	if z.inputOpen || z.query != "" {
+		pieces = append(pieces, z.renderFilterRow(z.width))
+	}
+	pieces = append(pieces, footer)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, pieces...))
+}
+
+func (z *ZoningBrowser) renderFilterRow(width int) string {
+	style := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(1)
+	if z.inputOpen {
+		z.input.SetWidth(max(width-2, 8))
+		return style.Render(z.input.View())
+	}
+	return style.
+		Foreground(lipgloss.Color("245")).
+		Render("filter: " + z.query + "  (/: edit, esc-from-/: clear)")
 }
 
 func (z *ZoningBrowser) renderSummary() string {

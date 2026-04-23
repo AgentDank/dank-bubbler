@@ -455,11 +455,10 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key, ok := msg.(tea.KeyMsg); ok {
 			switch key.String() {
 			case "esc":
+				// ESC clears any committed query and closes the prompt.
 				hadQuery := r.query != ""
 				r.inputOpen = false
 				r.input.Blur()
-				// Clear any committed query when ESC is used — a common mental
-				// model ("ESC means nevermind, back to unfiltered").
 				if hadQuery {
 					r.query = ""
 					r.recompute()
@@ -467,15 +466,24 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				r.relayout()
 				return r, nil
 			case "enter":
+				// Enter seals the live-search query — the query is already
+				// applied (live), we just close the prompt.
 				r.inputOpen = false
 				r.input.Blur()
-				r.query = r.input.Value()
-				r.recompute()
 				r.relayout()
-				return r, r.centerMapOnSelectionIfChanged(true)
+				return r, nil
 			}
+			// Live search: forward to textinput, then if the value changed
+			// re-apply the filter immediately and recenter on the (possibly
+			// new) selected row.
+			prev := r.input.Value()
 			var cmd tea.Cmd
 			r.input, cmd = r.input.Update(msg)
+			if r.input.Value() != prev {
+				r.query = r.input.Value()
+				r.recompute()
+				return r, tea.Batch(cmd, r.centerMapOnSelectionIfChanged(true))
+			}
 			return r, cmd
 		}
 	}

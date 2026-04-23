@@ -20,6 +20,7 @@ func TestZoningColumnRows(t *testing.T) {
 	tests := []struct {
 		name  string
 		order zoningSortOrder
+		query string
 		want  [zoningColumnCount][]string
 	}{
 		{
@@ -42,11 +43,33 @@ func TestZoningColumnRows(t *testing.T) {
 				{"Barkhamsted", "Andover"},
 			},
 		},
+		{
+			name:  "filter matches prefix case-insensitive",
+			order: zoningSortAsc,
+			query: "ANS",
+			want: [zoningColumnCount][]string{
+				{"Ansonia"}, // Approved
+				nil,         // Prohibited
+				nil,         // Moratorium
+				nil,         // Unknown
+			},
+		},
+		{
+			name:  "filter matches substring",
+			order: zoningSortAsc,
+			query: "st",
+			want: [zoningColumnCount][]string{
+				{"Bristol"},     // Approved (Ansonia excluded)
+				nil,             // Prohibited
+				nil,             // Moratorium
+				{"Barkhamsted"}, // Unknown
+			},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := zoningColumnRows(all, tc.order)
+			got := zoningColumnRows(all, tc.order, tc.query)
 			var gotTowns [zoningColumnCount][]string
 			for i, col := range got {
 				for _, r := range col {
