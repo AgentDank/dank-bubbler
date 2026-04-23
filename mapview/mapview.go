@@ -431,6 +431,9 @@ func (m *Model) lookup(address string) tea.Cmd {
 		}
 		defer resp.Body.Close()
 		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return MapCoordinates{Err: err}
+		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return MapCoordinates{Err: errors.New(string(body))}
 		}
@@ -441,7 +444,7 @@ func (m *Model) lookup(address string) tea.Cmd {
 		}
 
 		if len(data) == 0 {
-			return MapCoordinates{Err: errors.New("Location not found")}
+			return MapCoordinates{Err: errors.New("location not found")}
 		}
 
 		lat, err := strconv.ParseFloat(data[0].Lat, 64)
