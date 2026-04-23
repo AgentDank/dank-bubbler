@@ -34,7 +34,7 @@ tasks:
     desc: Build dank-bubbler-ct tool
     deps: [tidy]
     cmds:
-      - go build -o bin/dank-bubbler-ct cmd/dank-bubbler-ct
+      - go build -o ./bin/dank-bubbler-ct ./cmd/dank-bubbler-ct
 
   clean:
     desc: Remove build artifacts

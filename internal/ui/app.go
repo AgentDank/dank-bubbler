@@ -38,6 +38,7 @@ type AppModel struct {
 	zoning     *ZoningBrowser
 	retail     *RetailBrowser
 	lastResize tea.WindowSizeMsg
+	faceFrame  int
 }
 
 // NewAppModel wires the pages.
@@ -61,10 +62,20 @@ func (a *AppModel) syncActivePage() {
 }
 
 func (a *AppModel) Init() tea.Cmd {
-	return tea.Batch(a.products.Init(), a.salesTax.Init(), a.zoning.Init(), a.retail.Init())
+	return tea.Batch(a.products.Init(), a.salesTax.Init(), a.zoning.Init(), a.retail.Init(), faceTickCmd(), faceSlideCmd())
 }
 
 func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(faceTickMsg); ok {
+		a.faceFrame = (a.faceFrame + 1) % len(faceFrames)
+		currentFace = faceFrames[a.faceFrame]
+		return a, faceTickCmd()
+	}
+	if _, ok := msg.(faceSlideMsg); ok {
+		stepFaceOffset()
+		return a, faceSlideCmd()
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.lastResize = msg

@@ -53,8 +53,6 @@ func (pb *ProductBrowser) SetActivePage(p Page) { pb.activePage = p }
 type FilterMode int
 
 const (
-	appHeader = "𓁹‿𓁹 AgentDank dank-bubbler 𖠞༄"
-
 	// tableHeaderBg is the background color applied to table column headers
 	// across the app (ANSI 22 — dark green).
 	tableHeaderBg = "22"
@@ -641,7 +639,7 @@ func renderAppHeader(width int, active Page) string {
 	}
 	tabStrip := strings.Join(tabs, dimStyle.Render(" "))
 
-	rightRendered := barStyle.Render(ansi.Truncate(appHeader, width, "") + " ")
+	rightRendered := barStyle.Render(ansi.Truncate(renderFaceSlot()+appTitle, width, "") + " ")
 	rightWidth := lipgloss.Width(rightRendered)
 
 	sourceLabel := barStyle.Render(" USA-CT Cannabis Data (data.ct.gov) ") + dimStyle.Render("│ ")

@@ -30,7 +30,7 @@ func TestLayoutDimensions(t *testing.T) {
 	wideContent := wideView.Content
 	wideText := ansi.Strip(wideContent)
 
-	if !strings.Contains(wideText, appHeader) {
+	if !strings.Contains(wideText, appTitle) {
 		t.Fatalf("expected header bar to contain app title")
 	}
 
