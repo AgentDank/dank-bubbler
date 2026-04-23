@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	version           = "0.0.1"
-	defaultDBPath     = "dank-data.duckdb"
+	version             = "0.0.1"
+	defaultDBPath       = "dank-data.duckdb"
 	productsDatabaseURL = "https://github.com/AgentDank/dank-data/raw/main/snapshots/us/ct/dank-data.duckdb.zst"
 )
 

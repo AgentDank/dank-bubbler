@@ -29,7 +29,7 @@ func TestZoningColumnRows(t *testing.T) {
 			want: [zoningColumnCount][]string{
 				{"Ansonia", "Bristol"},     // Approved
 				{"Avon"},                   // Prohibited
-				{"Bethany"},               // Moratorium
+				{"Bethany"},                // Moratorium
 				{"Andover", "Barkhamsted"}, // Unknown
 			},
 		},
