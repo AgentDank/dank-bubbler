@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"sort"
 	"strings"
 
@@ -14,6 +15,16 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/data"
 	"github.com/AgentDank/dank-bubbler/internal/models"
 	"github.com/AgentDank/dank-bubbler/mapview"
+)
+
+var (
+	retailMarkerColor         = color.RGBA{0x33, 0x99, 0xff, 0xff} // blue
+	retailSelectedMarkerColor = color.RGBA{0xff, 0x33, 0x00, 0xff} // red-orange
+)
+
+const (
+	retailMarkerSize         = 10
+	retailSelectedMarkerSize = 22
 )
 
 // retailTypeFilter selects which retail locations the page shows.
@@ -196,9 +207,9 @@ func NewRetailBrowser(loader *data.Loader) *RetailBrowser {
 		Foreground(lipgloss.Color("230"))
 	r.tbl = table.New(
 		table.WithColumns([]table.Column{
-			{Title: "Business", Width: 20},
-			{Title: "City", Width: 12},
-			{Title: "Type", Width: 5},
+			{Title: "Business", Width: 16},
+			{Title: "City", Width: 16},
+			{Title: "Type", Width: 4},
 		}),
 		table.WithFocused(true),
 		table.WithStyles(headerStyles),
@@ -270,14 +281,14 @@ func (r *RetailBrowser) View() tea.View {
 	listStyled := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("6")).
-		Width(listW - 2).
+		Width(listW).
 		Height(bodyH - 2).
 		Render(r.tbl.View())
 
 	mapStyled := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("6")).
-		Width(mapW - 2).
+		Width(mapW).
 		Height(bodyH - 2).
 		Render(r.mv.View().Content)
 
@@ -302,7 +313,7 @@ func (r *RetailBrowser) renderDetailBar(width, _ int) string {
 	}
 	l1, l2 := formatRetailDetailBar(loc)
 	box := lipgloss.NewStyle().
-		Width(width - 2).
+		Width(width).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("3")).
 		Padding(0, 1)
@@ -335,15 +346,15 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		listW := max(r.width/2, 40)
 		mapW := r.width - listW
 
-		// listStyled has outer width (listW-2) with a Border, so its content
-		// area is (listW-4). The table render uses that full content width
+		// listStyled has outer width listW with a Border, so its content
+		// area is (listW-2). The table render uses that full content width
 		// and its 3 cells each consume +2 chars of Padding(0,1), so the
-		// per-cell content budget is (listW - 4 - 6).
+		// per-cell content budget is (listW - 2 - 6).
 		const (
-			cityW = 12
-			typeW = 3 // HYB / AU / MED
+			cityW = 16
+			typeW = 4 // header "Type" is 4 chars; badges HYB/AU/MED fit in 3
 		)
-		tblW := max(listW-4, 10)
+		tblW := max(listW-2, 10)
 		businessW := max(tblW-6-cityW-typeW, 8)
 
 		r.tbl.SetHeight(max(bodyH-4, 3))
@@ -355,7 +366,7 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 		r.mv.Width = max(mapW-2, 20)
-		r.mv.Height = max(bodyH-2, 4)
+		r.mv.Height = max(bodyH-4, 4)
 		// Trigger a re-render at the new size by nudging via the current center.
 		cmd := r.centerMapOnSelectionIfChanged(true)
 		return r, cmd
@@ -386,6 +397,16 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Mapview output messages must reach r.mv regardless of which pane has
+	// focus, otherwise the new render never updates r.mv.maprender and the
+	// displayed image goes stale.
+	switch msg.(type) {
+	case mapview.MapRender, mapview.MapCoordinates:
+		var cmd tea.Cmd
+		r.mv, cmd = r.mv.Update(msg)
+		return r, cmd
+	}
+
 	// Route remaining messages based on focus.
 	switch r.focus {
 	case focusMap:
@@ -404,6 +425,8 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // row when the selection index has changed since the last call (or when
 // forced). Returns the tea.Cmd mapview emits for its tile fetch.
 func (r *RetailBrowser) centerMapOnSelectionIfChanged(force bool) tea.Cmd {
+	r.applyRetailMarkers()
+
 	loc, ok := r.selectedLocation()
 	if !ok {
 		return nil
@@ -426,4 +449,37 @@ func (r *RetailBrowser) centerMapOnSelectionIfChanged(force bool) tea.Cmd {
 	var cmd tea.Cmd
 	r.mv, cmd = r.mv.Update(mapview.MapCoordinates{Lat: loc.Latitude, Lng: loc.Longitude})
 	return cmd
+}
+
+// applyRetailMarkers syncs the map's marker set with the current filtered
+// view. Non-selected retailers get a small blue dot; the row under the cursor
+// gets a larger red-orange dot and is drawn last so it paints on top.
+func (r *RetailBrowser) applyRetailMarkers() {
+	selectedIdx := r.tbl.Cursor()
+	markers := make([]mapview.Marker, 0, len(r.view))
+	var selected *mapview.Marker
+	for i, loc := range r.view {
+		if loc.Latitude == 0 && loc.Longitude == 0 {
+			continue
+		}
+		if i == selectedIdx {
+			selected = &mapview.Marker{
+				Lat:   loc.Latitude,
+				Lng:   loc.Longitude,
+				Color: retailSelectedMarkerColor,
+				Size:  retailSelectedMarkerSize,
+			}
+			continue
+		}
+		markers = append(markers, mapview.Marker{
+			Lat:   loc.Latitude,
+			Lng:   loc.Longitude,
+			Color: retailMarkerColor,
+			Size:  retailMarkerSize,
+		})
+	}
+	if selected != nil {
+		markers = append(markers, *selected)
+	}
+	r.mv.SetMarkers(markers)
 }
