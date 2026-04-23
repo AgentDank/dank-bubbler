@@ -91,6 +91,14 @@ func DefaultKeyMap() KeyMap {
 	}
 }
 
+// Marker is a point to draw on the map. Color and Size are optional and fall
+// back to sensible defaults (red, size 16) when left zero.
+type Marker struct {
+	Lat, Lng float64
+	Color    color.Color
+	Size     float64
+}
+
 type Model struct {
 	Width  int
 	Height int
@@ -107,6 +115,7 @@ type Model struct {
 	loc          string
 	zoom         int
 	maprender    string
+	markers      []Marker
 }
 
 func New(width, height int) (m Model) {
@@ -126,6 +135,7 @@ func (m *Model) setInitialValues() {
 	m.lng = -77.3383438
 	m.loc = ""
 	m.applyToOSM()
+	m.applyMarkersToOSM()
 	m.initialized = true
 }
 
@@ -133,6 +143,42 @@ func (m *Model) applyToOSM() {
 	m.osm.SetTileProvider(m.tileProvider)
 	m.osm.SetCenter(s2.LatLngFromDegrees(m.lat, m.lng))
 	m.osm.SetZoom(m.zoom)
+}
+
+// SetMarkers replaces all currently-drawn markers on the map. Pass an empty
+// slice (or call ClearMarkers) to remove them.
+func (m *Model) SetMarkers(markers []Marker) {
+	m.markers = markers
+	m.applyMarkersToOSM()
+}
+
+// ClearMarkers removes all markers from the map.
+func (m *Model) ClearMarkers() {
+	m.markers = nil
+	if m.osm != nil {
+		m.osm.ClearObjects()
+	}
+}
+
+// applyMarkersToOSM clears the underlying context's objects and re-adds the
+// current marker set. Markers are drawn in slice order, so callers that want
+// a particular marker drawn on top should place it last.
+func (m *Model) applyMarkersToOSM() {
+	if m.osm == nil {
+		return
+	}
+	m.osm.ClearObjects()
+	for _, mk := range m.markers {
+		col := mk.Color
+		if col == nil {
+			col = color.RGBA{0xff, 0x00, 0x00, 0xff}
+		}
+		size := mk.Size
+		if size == 0 {
+			size = 16
+		}
+		m.osm.AddObject(sm.NewMarker(s2.LatLngFromDegrees(mk.Lat, mk.Lng), col, size))
+	}
 }
 
 // Zoom returns the current zoom level.

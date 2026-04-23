@@ -1,6 +1,7 @@
 package mapview
 
 import (
+	"image/color"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -77,6 +78,30 @@ func TestUpdateHandlesCoordinatesAndRenderMessage(t *testing.T) {
 
 	if updated.View().Content != "rendered map" {
 		t.Fatalf("expected view to return rendered map, got %q", updated.View().Content)
+	}
+}
+
+func TestSetMarkersStoresAndClears(t *testing.T) {
+	m := New(80, 24)
+
+	m.SetMarkers([]Marker{
+		{Lat: 41.5, Lng: -72.7},
+		{Lat: 41.6, Lng: -72.8, Color: color.RGBA{0x00, 0xff, 0x00, 0xff}, Size: 20},
+	})
+
+	if len(m.markers) != 2 {
+		t.Fatalf("expected 2 markers, got %d", len(m.markers))
+	}
+	if m.markers[0].Color != nil {
+		t.Errorf("expected first marker to keep nil color for defaulting, got %#v", m.markers[0].Color)
+	}
+	if m.markers[1].Size != 20 {
+		t.Errorf("expected second marker size 20, got %v", m.markers[1].Size)
+	}
+
+	m.ClearMarkers()
+	if len(m.markers) != 0 {
+		t.Fatalf("expected markers to be cleared, got %d", len(m.markers))
 	}
 }
 
