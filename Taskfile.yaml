@@ -35,6 +35,11 @@ tasks:
     deps: [tidy]
     cmds:
       - go build -o ./bin/dank-bubbler-ct ./cmd/dank-bubbler-ct
+    sources:
+      - "**/*.go"
+      - go.mod
+    generates:
+      - ./bin/dank-bubbler-ct
 
   clean:
     desc: Remove build artifacts
@@ -43,10 +48,29 @@ tasks:
       - go clean
 
   run:
-    desc: Run dank-bubbler-ct (requires --db flag)
+    desc: Run dank-bubbler-ct
     deps: [build]
     cmds:
       - ./bin/dank-bubbler-ct {{.CLI_ARGS}}
+
+###############################################################################
+
+  build:kitty-probe:
+    desc: Build kitty-probe
+    deps: [tidy]
+    cmds:
+      - go build -o ./bin/kitty-probe ./cmd/kitty-probe
+    sources:
+      - "**/*.go"
+      - go.mod
+    generates:
+      - ./bin/dank-bubbler-ct
+
+  run:kitty-probe:
+    desc: Run kitty-probe
+    deps: [build:kitty-probe]
+    cmds:
+      - ./bin/kitty-probe {{.CLI_ARGS}}
 
 ###############################################################################
 

@@ -6,6 +6,9 @@
 *.so.*
 *.dylib
 
+# Task cache and state files
+.task
+
 # Test binary, built with `go test -c`
 *.test
 
