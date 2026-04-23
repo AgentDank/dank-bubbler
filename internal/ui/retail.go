@@ -28,6 +28,9 @@ const (
 	retailSelectedMarkerSize = 8 // small red dot that sits on top of the selected row's blue
 )
 
+// retailUpstreamURL points to the CT.gov dataset that feeds ct_retail_locations.
+const retailUpstreamURL = "https://data.ct.gov/Health-and-Human-Services/Licensed-Cannabis-Retailers-and-Medical-Marijuana-/p4ks-rfxp"
+
 // retailTypeFilter selects which retail locations the page shows.
 type retailTypeFilter int
 
@@ -131,6 +134,42 @@ func retailRowMatches(r models.RetailLocation, filter retailTypeFilter) bool {
 		return r.Type == "Medical Marijuana Only"
 	default:
 		return true
+	}
+}
+
+// retailSortLabel returns a human-readable description of the active sort.
+func retailSortLabel(k retailSortKey) string {
+	switch k {
+	case retailSortDBAAsc:
+		return "dba↑"
+	case retailSortDBADesc:
+		return "dba↓"
+	case retailSortBusinessAsc:
+		return "business↑"
+	case retailSortBusinessDesc:
+		return "business↓"
+	case retailSortCityAsc:
+		return "city↑"
+	case retailSortCityDesc:
+		return "city↓"
+	default:
+		return "?"
+	}
+}
+
+// retailTypeFilterLabel returns a human-readable description of the type
+// filter. Returns an empty string when no type filter is applied so the
+// caller can suppress the pill entirely.
+func retailTypeFilterLabel(f retailTypeFilter) string {
+	switch f {
+	case retailFilterHybrid:
+		return "hybrid"
+	case retailFilterAdultUseOnly:
+		return "adult-use"
+	case retailFilterMedicalOnly:
+		return "medical"
+	default:
+		return ""
 	}
 }
 
@@ -345,14 +384,16 @@ func (r *RetailBrowser) View() tea.View {
 		return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, small, footer))
 	}
 
-	// Body layout: list (left) | map (right), then detail (2 rows), then help.
+	// Body layout: list (left) | map (right), then detail (2 rows), then
+	// page-state bar (1), then help.
 	// listW formula must match the one in Update so the table inside fits.
 	detailH := 2
+	pageFooterH := 1
 	filterH := 0
 	if r.inputOpen || r.query != "" {
 		filterH = 1
 	}
-	bodyH := max(r.height-1-filterH-detailH-1, 4) // header + filter? + detail + footer
+	bodyH := max(r.height-1-filterH-detailH-pageFooterH-1, 4) // header + filter? + detail + pageFooter + help
 	listW := max(r.width/2, 40)
 	mapW := r.width - listW
 
@@ -386,8 +427,35 @@ func (r *RetailBrowser) View() tea.View {
 	if filterH > 0 {
 		pieces = append(pieces, r.renderFilterRow(r.width))
 	}
-	pieces = append(pieces, detail, footer)
+	pieces = append(pieces, detail, r.renderPageFooterBar(), footer)
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, pieces...))
+}
+
+// renderPageFooterBar composes the page-state + upstream-URL bar. Parts:
+//   - rows: how many retailers pass the current filters
+//   - type: filter label (only when non-All)
+//   - sort: current sort key + direction
+//   - filter: current search query (only when non-empty)
+//   - map: glyph vs kitty, tile style
+func (r *RetailBrowser) renderPageFooterBar() string {
+	parts := []string{fmt.Sprintf("rows: %d", len(r.view))}
+	if t := retailTypeFilterLabel(r.typeFilter); t != "" {
+		parts = append(parts, "type: "+t)
+	}
+	parts = append(parts, "sort: "+retailSortLabel(r.sortBy))
+	if r.query != "" {
+		parts = append(parts, "filter: "+r.query)
+	}
+	mapMode := "glyph"
+	if r.mv.RenderMode() == mapview.RenderKitty {
+		mapMode = "kitty"
+	}
+	tileName := "osm"
+	if r.mv.TileStyle() == mapview.ArcgisWorldImagery {
+		tileName = "sat"
+	}
+	parts = append(parts, "map: "+mapMode+"/"+tileName)
+	return renderPageFooter(r.width, strings.Join(parts, "  ·  "), retailUpstreamURL)
 }
 
 // relayout reruns the WindowSize-driven layout math with the current
@@ -495,11 +563,12 @@ func (r *RetailBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r.help.SetWidth(msg.Width)
 
 		detailH := 2
+		pageFooterH := 1
 		filterH := 0
 		if r.inputOpen || r.query != "" {
 			filterH = 1
 		}
-		bodyH := max(r.height-1-filterH-detailH-1, 4)
+		bodyH := max(r.height-1-filterH-detailH-pageFooterH-1, 4)
 		listW := max(r.width/2, 40)
 		mapW := r.width - listW
 

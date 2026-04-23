@@ -16,6 +16,9 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
+// zoningUpstreamURL points to the CT.gov dataset that feeds ct_zoning.
+const zoningUpstreamURL = "https://data.ct.gov/Government/Cannabis-Zoning/khc7-gd9u"
+
 // zoningSortOrder determines the alphabetical direction applied to each column.
 type zoningSortOrder int
 
@@ -226,12 +229,12 @@ func (z *ZoningBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		z.height = msg.Height
 		z.help.SetWidth(msg.Width)
 
-		// Layout: header (1) + summary (1) + filter? (1) + columns body + footer (1).
+		// Layout: header (1) + summary (1) + columns body + filter? (1) + pageFooter (1) + help (1).
 		filterH := 0
 		if z.inputOpen || z.query != "" {
 			filterH = 1
 		}
-		bodyH := max(msg.Height-3-filterH, 4)
+		bodyH := max(msg.Height-4-filterH, 4)
 		// Each column: subtract for the border frame (2) and the column header row (1).
 		tH := max(bodyH-3, 3)
 		// Each column gets an equal slice of the width; subtract 2 per column for border.
@@ -323,8 +326,24 @@ func (z *ZoningBrowser) View() tea.View {
 	if z.inputOpen || z.query != "" {
 		pieces = append(pieces, z.renderFilterRow(z.width))
 	}
-	pieces = append(pieces, footer)
+	pieces = append(pieces, z.renderPageFooterBar(), footer)
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, pieces...))
+}
+
+func (z *ZoningBrowser) renderPageFooterBar() string {
+	total := 0
+	for _, c := range z.cols {
+		total += len(c)
+	}
+	direction := "asc"
+	if z.sortOrder == zoningSortDesc {
+		direction = "desc"
+	}
+	parts := []string{fmt.Sprintf("towns: %d", total), "sort: " + direction}
+	if z.query != "" {
+		parts = append(parts, "filter: "+z.query)
+	}
+	return renderPageFooter(z.width, strings.Join(parts, "  ·  "), zoningUpstreamURL)
 }
 
 func (z *ZoningBrowser) renderFilterRow(width int) string {

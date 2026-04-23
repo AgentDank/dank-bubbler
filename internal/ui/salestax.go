@@ -53,6 +53,9 @@ func dollarLabelFormatter() linechart.LabelFormatter {
 	}
 }
 
+// salesTaxUpstreamURL points to the CT.gov dataset that feeds ct_tax / ct_weekly_sales.
+const salesTaxUpstreamURL = "https://data.ct.gov/Health-and-Human-Services/Cannabis-Retail-Sales-by-Month/f382-bnu5"
+
 // TimeRange selects the historical window shown on the Sales & Tax page.
 type TimeRange int
 
@@ -187,7 +190,8 @@ func (s *SalesTaxBrowser) reload() {
 func (s *SalesTaxBrowser) View() tea.View {
 	header := s.renderHeader()
 	footer := s.renderHelp()
-	middleHeight := max(s.height-3, 0)
+	// header (1) + page footer (1) + help (1) + 1 safety = 4
+	middleHeight := max(s.height-4, 0)
 
 	revenueH := middleHeight * 2 / 5
 	productsH := middleHeight / 3
@@ -206,7 +210,18 @@ func (s *SalesTaxBrowser) View() tea.View {
 	content := lipgloss.JoinVertical(lipgloss.Left, revenue, products, price)
 	content = lipgloss.NewStyle().Width(s.width).MaxWidth(s.width).Render(content)
 
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, content, footer))
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, content, s.renderPageFooterBar(), footer))
+}
+
+func (s *SalesTaxBrowser) renderPageFooterBar() string {
+	parts := []string{"range: " + s.timeRange.String()}
+	if n := len(s.sales); n > 0 {
+		parts = append(parts, fmt.Sprintf("weekly rows: %d", n))
+	}
+	if n := len(s.tax); n > 0 {
+		parts = append(parts, fmt.Sprintf("monthly rows: %d", n))
+	}
+	return renderPageFooter(s.width, strings.Join(parts, "  ·  "), salesTaxUpstreamURL)
 }
 
 func (s *SalesTaxBrowser) renderHeader() string {

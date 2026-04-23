@@ -20,6 +20,9 @@ import (
 	"github.com/AgentDank/dank-bubbler/internal/models"
 )
 
+// brandsUpstreamURL points to the CT.gov dataset that feeds the brands table.
+const brandsUpstreamURL = "https://data.ct.gov/Health-and-Human-Services/Medical-Marijuana-and-Adult-Use-Cannabis-Product-R/egd5-wb6r"
+
 // ProductBrowser is a BubbleTea component for browsing cannabis products
 type ProductBrowser struct {
 	products      []models.Product
@@ -333,8 +336,17 @@ func (pb *ProductBrowser) View() tea.View {
 		lipgloss.Left,
 		header,
 		content,
+		pb.renderPageFooterBar(),
 		footer,
 	))
+}
+
+func (pb *ProductBrowser) renderPageFooterBar() string {
+	parts := []string{fmt.Sprintf("products: %d", len(pb.products))}
+	if pb.activeFilter != "" && pb.filterTitle != "" {
+		parts = append(parts, pb.filterTitle+": "+pb.activeFilter)
+	}
+	return renderPageFooter(pb.width, strings.Join(parts, "  ·  "), brandsUpstreamURL)
 }
 
 func (pb *ProductBrowser) renderProductList(outerWidth, outerHeight int) string {
@@ -527,7 +539,7 @@ func (pb *ProductBrowser) renderBarChartBox(outerWidth, outerHeight int, entries
 	barData := make([]barchart.BarData, 0, len(entries))
 	for _, e := range entries {
 		barData = append(barData, barchart.BarData{
-			Label: e.name,
+			Label:  e.name,
 			Values: []barchart.BarValue{{Name: e.name, Value: e.value, Style: barStyle}},
 		})
 	}
@@ -646,6 +658,37 @@ func renderAppHeader(width int, active Page) string {
 
 	pad := max(width-lipgloss.Width(left)-rightWidth, 0)
 	return left + barStyle.Render(strings.Repeat(" ", pad)) + rightRendered
+}
+
+// renderPageFooter renders a single-row bar with page-state on the left and
+// the upstream data URL right-justified. Both pieces are truncated to fit if
+// the window is narrow; the URL is kept whole (no ellipsis) so it remains
+// copy-pasteable, but will be dropped entirely before any other content
+// spills off the right edge.
+func renderPageFooter(width int, status, url string) string {
+	if width <= 0 {
+		return ""
+	}
+	barStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("236")).
+		Foreground(lipgloss.Color("252"))
+	urlStyle := barStyle.Foreground(lipgloss.Color("117")) // soft blue
+	right := ""
+	rightW := 0
+	if url != "" {
+		right = urlStyle.Render(" " + url + " ")
+		rightW = lipgloss.Width(right)
+	}
+	// Drop the URL entirely if there isn't room for it plus at least a space.
+	if rightW+1 > width {
+		right = ""
+		rightW = 0
+	}
+	leftBudget := max(width-rightW, 0)
+	left := barStyle.Render(" " + ansi.Truncate(status, max(leftBudget-1, 0), "…"))
+	leftW := lipgloss.Width(left)
+	pad := max(width-leftW-rightW, 0)
+	return left + barStyle.Render(strings.Repeat(" ", pad)) + right
 }
 
 func (pb *ProductBrowser) renderHelp() string {
@@ -1060,7 +1103,8 @@ func (pb *ProductBrowser) loadProductsByDate(day string) ([]models.Product, erro
 }
 
 func (pb *ProductBrowser) middleHeight() int {
-	return max(pb.height-3, 0)
+	// header (1) + page footer (1) + help (1) + 1 safety = 4
+	return max(pb.height-4, 0)
 }
 
 func (pb *ProductBrowser) paneWidths() (int, int) {
