@@ -51,4 +51,4 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --snapshot --clean
+          args: build --snapshot --single-target --clean
