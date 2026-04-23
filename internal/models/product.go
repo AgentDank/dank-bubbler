@@ -20,6 +20,7 @@ type Product struct {
 	Market              string     // market (e.g., "CT")
 	Chemotype           string     // chemotype
 	ProcessingTechnique string     // processing_technique
+	ProductImageURL     string     // product_image_url
 }
 
 // Compound represents a cannabinoid or terpene with its percentage.

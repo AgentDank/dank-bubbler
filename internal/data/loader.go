@@ -405,7 +405,8 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 			COALESCE(cannabidiols_cbd, 0) as cbd,
 			COALESCE(cannabidiol_acid_cbda, 0) as cbda,
 			COALESCE(market, '') as market,
-			COALESCE(chemotype, '') as chemotype
+			COALESCE(chemotype, '') as chemotype,
+			COALESCE(product_image_url, '') as product_image_url
 		FROM ct_brands
 		WHERE registration_number = ?
 	`, registrationNumber).Scan(
@@ -420,6 +421,7 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 		&product.CBDA,
 		&product.Market,
 		&product.Chemotype,
+		&product.ProductImageURL,
 	)
 
 	if err != nil && err != sql.ErrNoRows {

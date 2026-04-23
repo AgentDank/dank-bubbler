@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -42,6 +43,7 @@ type ProductBrowser struct {
 	activeFilter  string
 	help          help.Model
 	leftList      list.Model
+	tbl           table.Model
 	activePage    Page
 }
 
@@ -68,11 +70,6 @@ const (
 	FilterModeByType
 	FilterModeByDate
 )
-
-// ProductItem implements the list.Item interface for products
-type ProductItem struct {
-	product models.Product
-}
 
 type FilterOptionItem struct {
 	value string
@@ -146,22 +143,6 @@ func (km browserHelpKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{{pagesKey, moveKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
 }
 
-func (p ProductItem) FilterValue() string {
-	return strings.ToLower(p.product.BrandName)
-}
-
-func (p ProductItem) String() string {
-	return fmt.Sprintf("%s (%s)", p.product.BrandName, p.product.DosageForm)
-}
-
-func (p ProductItem) Title() string {
-	return p.String()
-}
-
-func (p ProductItem) Description() string {
-	return ""
-}
-
 func (f FilterOptionItem) FilterValue() string {
 	return strings.ToLower(f.value)
 }
@@ -194,6 +175,7 @@ func NewProductBrowser(products []models.Product, brands []models.Brand, loader 
 	pb.help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	pb.help.Styles.Ellipsis = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	pb.leftList = newBrowserList()
+	pb.tbl = newProductTable()
 	pb.setProductItems()
 	pb.updateDimensions(80, 24)
 	// Prime selected product details
@@ -216,8 +198,22 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseWheelMsg:
 		m := msg.Mouse()
-		leftWidth, _ := pb.paneWidths()
-		if m.X < 0 || m.X >= leftWidth {
+		if pb.filterMode == FilterModeNone {
+			oldIndex := pb.tbl.Cursor()
+			switch m.Button {
+			case tea.MouseWheelUp:
+				pb.tbl.MoveUp(1)
+			case tea.MouseWheelDown:
+				pb.tbl.MoveDown(1)
+			default:
+				return pb, nil
+			}
+			newIndex := pb.tbl.Cursor()
+			if newIndex != oldIndex {
+				pb.selectedIdx = newIndex
+				pb.loadSelectedProductDetails()
+				pb.updateInfoPane()
+			}
 			return pb, nil
 		}
 		oldIndex := pb.leftList.Index()
@@ -231,13 +227,7 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		newIndex := pb.leftList.Index()
 		if newIndex != oldIndex {
-			if pb.filterMode == FilterModeNone {
-				pb.selectedIdx = newIndex
-				pb.loadSelectedProductDetails()
-				pb.updateInfoPane()
-			} else {
-				pb.filterIdx = newIndex
-			}
+			pb.filterIdx = newIndex
 		}
 		return pb, nil
 
@@ -275,10 +265,10 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return pb, tea.Quit
 		}
 
-		oldIndex := pb.leftList.Index()
+		oldIndex := pb.tbl.Cursor()
 		var cmd tea.Cmd
-		pb.leftList, cmd = pb.leftList.Update(msg)
-		pb.selectedIdx = pb.leftList.Index()
+		pb.tbl, cmd = pb.tbl.Update(msg)
+		pb.selectedIdx = pb.tbl.Cursor()
 		if pb.selectedIdx != oldIndex {
 			pb.loadSelectedProductDetails()
 			pb.updateInfoPane()
@@ -294,38 +284,28 @@ func (pb *ProductBrowser) View() tea.View {
 	header := pb.renderHeader()
 	footer := pb.renderHelp()
 	middleHeight := pb.middleHeight()
-	leftWidth, rightWidth := pb.paneWidths()
-	topHeight, bottomHeight := pb.rightPaneHeights(middleHeight)
-	pb.configureLeftList(leftWidth, middleHeight)
+	topHeight, bottomHeight := pb.middleSplit(middleHeight)
+	pb.configureLeftList(pb.width, topHeight)
 
-	// Left pane: product list (1/3 width)
-	leftPane := pb.renderProductList(leftWidth, middleHeight)
+	// Top: product table spans the full width.
+	topPane := pb.renderProductList(pb.width, topHeight)
 
-	// Right panes: top info, bottom split into cannabinoids + terpenes
-	rightTopPane := pb.renderInfoPane(rightWidth, topHeight)
-	cannabinoidsWidth := rightWidth / 2
-	terpenesWidth := rightWidth - cannabinoidsWidth
-	cannabinoidsPane := pb.renderCannabinoidsChart(cannabinoidsWidth, bottomHeight)
-	terpenesPane := pb.renderTerpenesChart(terpenesWidth, bottomHeight)
-	rightBottomPane := lipgloss.JoinHorizontal(
+	// Bottom: four equal-width panes side by side.
+	paneW := pb.width / 4
+	lastPaneW := max(pb.width-3*paneW, 0)
+	infoPane := pb.renderInfoPane(paneW, bottomHeight)
+	cannabinoidsPane := pb.renderCannabinoidsChart(paneW, bottomHeight)
+	terpenesPane := pb.renderTerpenesChart(paneW, bottomHeight)
+	picturePane := pb.renderPicturePane(lastPaneW, bottomHeight)
+	bottomRow := lipgloss.JoinHorizontal(
 		lipgloss.Top,
+		infoPane,
 		cannabinoidsPane,
 		terpenesPane,
+		picturePane,
 	)
 
-	// Combine right panes vertically
-	rightPane := lipgloss.JoinVertical(
-		lipgloss.Left,
-		rightTopPane,
-		rightBottomPane,
-	)
-
-	// Combine left and right horizontally
-	content := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftPane,
-		rightPane,
-	)
+	content := lipgloss.JoinVertical(lipgloss.Left, topPane, bottomRow)
 	content = lipgloss.NewStyle().
 		Width(pb.width).
 		MaxWidth(pb.width).
@@ -350,7 +330,22 @@ func (pb *ProductBrowser) renderPageFooterBar() string {
 
 func (pb *ProductBrowser) renderProductList(outerWidth, outerHeight int) string {
 	style := pb.listPaneStyle()
-	content := pb.leftList.View()
+	if pb.filterMode != FilterModeNone {
+		return style.
+			Width(outerWidth).
+			Height(outerHeight).
+			Render(pb.leftList.View())
+	}
+
+	title := "Products"
+	if label := pb.currentFilterLabel(); label != "" {
+		title = fmt.Sprintf("%s [%s]", title, label)
+	}
+	titleLine := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("2")).
+		Bold(true).
+		Render(title)
+	content := lipgloss.JoinVertical(lipgloss.Left, titleLine, pb.tbl.View())
 	return style.
 		Width(outerWidth).
 		Height(outerHeight).
@@ -422,18 +417,56 @@ func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 		}
 	}
 
-	content := info.String()
-	if innerHeight > 0 {
-		lines := strings.Split(content, "\n")
-		if len(lines) > innerHeight {
-			lines = lines[:innerHeight]
-			content = strings.Join(lines, "\n")
-		}
-	}
+	innerWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
+	content := fitPaneContent(info.String(), innerWidth, innerHeight)
 	return style.
 		Width(outerWidth).
 		Height(outerHeight).
 		Render(content)
+}
+
+// renderPicturePane renders the selected product's image URL. This is the
+// placeholder for an eventual inline image; for now we just show the URL so
+// the user can copy or open it externally.
+func (pb *ProductBrowser) renderPicturePane(outerWidth, outerHeight int) string {
+	style := pb.infoPaneStyle()
+	innerWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
+	innerHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
+	if len(pb.products) == 0 {
+		return style.Width(outerWidth).Height(outerHeight).Render("No product selected")
+	}
+	product := pb.products[pb.selectedIdx]
+	url := product.ProductImageURL
+	if url == "" {
+		return style.Width(outerWidth).Height(outerHeight).Render("No image")
+	}
+
+	var body strings.Builder
+	body.WriteString(pb.styledLabel("Image URL:"))
+	body.WriteString("\n")
+	body.WriteString(url)
+	content := fitPaneContent(body.String(), innerWidth, innerHeight)
+	return style.Width(outerWidth).Height(outerHeight).Render(content)
+}
+
+// fitPaneContent truncates each line to innerWidth (using ansi.Truncate so
+// styled prefixes survive) and clips the line count to innerHeight. This
+// prevents lipgloss from wrapping lines that are wider than the pane, which
+// would otherwise grow the rendered height beyond Height(outerHeight).
+func fitPaneContent(content string, innerWidth, innerHeight int) string {
+	if innerWidth <= 0 || innerHeight <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > innerHeight {
+		lines = lines[:innerHeight]
+	}
+	for i, line := range lines {
+		if lipgloss.Width(line) > innerWidth {
+			lines[i] = ansi.Truncate(line, innerWidth, "")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 type barEntry struct {
@@ -747,24 +780,56 @@ func (pb *ProductBrowser) updateDimensions(width, height int) {
 
 func (pb *ProductBrowser) configureLeftList(outerWidth, outerHeight int) {
 	style := pb.listPaneStyle()
-	listWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
-	listHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
+	innerWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
+	innerHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
 
-	pb.leftList.SetSize(listWidth, listHeight)
 	if pb.filterMode != FilterModeNone {
+		pb.leftList.SetSize(innerWidth, innerHeight)
 		pb.leftList.Title = pb.filterTitle
 		pb.leftList.SetShowTitle(true)
 		pb.filterIdx = pb.leftList.Index()
 		return
 	}
 
-	title := "Products"
-	if label := pb.currentFilterLabel(); label != "" {
-		title = fmt.Sprintf("%s [%s]", title, label)
+	// Products mode: one-line title above the table.
+	tableHeight := max(innerHeight-1, 1)
+	pb.tbl.SetWidth(innerWidth)
+	pb.tbl.SetHeight(tableHeight)
+	pb.tbl.SetColumns(productTableColumns(innerWidth))
+	pb.selectedIdx = pb.tbl.Cursor()
+}
+
+// productTableColumns distributes innerW across brand / approval date / form.
+// The bubbles/v2 table widget renders each cell with 1-char L/R padding, so
+// the natural width is sum(widths) + 2*ncols; overflow wraps via lipgloss and
+// doubles the pane height. The sum-of-widths budget here is innerW - 6 (3
+// columns × 2-char padding). When space allows, the date column is pinned to
+// its header width (13, "approval date"); otherwise it shrinks to 10 (body
+// "YYYY-MM-DD") and the header truncates with an ellipsis.
+func productTableColumns(innerW int) []table.Column {
+	const (
+		ncols        = 3
+		dateHeaderW  = 13 // "approval date"
+		dateBodyW    = 10 // "YYYY-MM-DD"
+	)
+	budget := max(innerW-2*ncols, 3)
+
+	dateW := dateBodyW
+	if budget >= dateHeaderW+6 {
+		dateW = dateHeaderW
 	}
-	pb.leftList.Title = title
-	pb.leftList.SetShowTitle(true)
-	pb.selectedIdx = pb.leftList.Index()
+	if dateW > budget-2 {
+		dateW = max(budget-2, 1)
+	}
+
+	remainder := max(budget-dateW, 2)
+	brandW := max(remainder*3/5, 1)
+	formW := max(remainder-brandW, 1)
+	return []table.Column{
+		{Title: "brand", Width: brandW},
+		{Title: "approval date", Width: dateW},
+		{Title: "form", Width: formW},
+	}
 }
 
 // loadSelectedProductDetails enriches the currently selected product with compound data.
@@ -1106,34 +1171,38 @@ func (pb *ProductBrowser) middleHeight() int {
 	return max(pb.height-3, 0)
 }
 
-func (pb *ProductBrowser) paneWidths() (int, int) {
-	totalWidth := max(pb.width, 0)
-	if totalWidth == 0 {
-		return 0, 0
-	}
-
-	leftWidth := totalWidth / 3
-	const minLeftWidth = 24
-	const minRightWidth = 36
-
-	if totalWidth >= minLeftWidth+minRightWidth {
-		leftWidth = max(leftWidth, minLeftWidth)
-		leftWidth = min(leftWidth, totalWidth-minRightWidth)
-	} else {
-		leftWidth = totalWidth / 2
-	}
-
-	return leftWidth, totalWidth - leftWidth
-}
-
-func (pb *ProductBrowser) rightPaneHeights(totalHeight int) (int, int) {
+// middleSplit partitions the middle vertical space between the top (products
+// table) and bottom (four detail panes). The bottom gets enough height for
+// one row of bordered panes plus a few content rows; everything else goes to
+// the table so the user can see more products at once.
+func (pb *ProductBrowser) middleSplit(totalHeight int) (int, int) {
 	if totalHeight <= 0 {
 		return 0, 0
 	}
-
-	topHeight := totalHeight / 2
-	bottomHeight := totalHeight - topHeight
+	bottomHeight := min(totalHeight/2, 12)
+	bottomHeight = max(bottomHeight, min(totalHeight, 6))
+	topHeight := max(totalHeight-bottomHeight, 0)
 	return topHeight, bottomHeight
+}
+
+func newProductTable() table.Model {
+	styles := table.DefaultStyles()
+	styles.Header = styles.Header.
+		Background(lipgloss.Color(tableHeaderBg)).
+		Foreground(lipgloss.Color("230")).
+		Bold(true)
+	styles.Selected = styles.Selected.
+		Background(lipgloss.Color(tableSelectedBg)).
+		Foreground(lipgloss.Color("230"))
+	return table.New(
+		table.WithColumns([]table.Column{
+			{Title: "brand", Width: 12},
+			{Title: "approval date", Width: 13},
+			{Title: "form", Width: 8},
+		}),
+		table.WithFocused(true),
+		table.WithStyles(styles),
+	)
 }
 
 func newBrowserList() list.Model {
@@ -1162,19 +1231,27 @@ func newBrowserList() list.Model {
 }
 
 func (pb *ProductBrowser) setProductItems() {
-	items := make([]list.Item, 0, len(pb.products))
+	rows := make([]table.Row, 0, len(pb.products))
 	for _, product := range pb.products {
-		items = append(items, ProductItem{product: product})
+		brand := product.BrandName
+		if brand == "" {
+			brand = product.BrandingEntity
+		}
+		approved := ""
+		if !product.ApprovalDate.IsZero() {
+			approved = product.ApprovalDate.Format("2006-01-02")
+		}
+		rows = append(rows, table.Row{brand, approved, product.DosageForm})
 	}
-	pb.leftList.SetItems(items)
-	if len(items) == 0 {
-		pb.leftList.Select(0)
+	pb.tbl.SetRows(rows)
+	if len(rows) == 0 {
+		pb.tbl.SetCursor(0)
 		pb.selectedIdx = 0
 		return
 	}
 
-	pb.selectedIdx = min(pb.selectedIdx, len(items)-1)
-	pb.leftList.Select(pb.selectedIdx)
+	pb.selectedIdx = min(pb.selectedIdx, len(rows)-1)
+	pb.tbl.SetCursor(pb.selectedIdx)
 }
 
 func (pb *ProductBrowser) setFilterItems() {
