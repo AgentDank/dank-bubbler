@@ -20,7 +20,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      GORELEASER_CROSS_VERSION: v2.15.4
+      GORELEASER_CROSS_VERSION: v1.26.2-3
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -29,7 +29,7 @@ jobs:
 
       - name: Run goreleaser
         run: |
-          docker run --rm \
+          docker run --rm --pull always \
             -e GITHUB_TOKEN \
             -e HOMEBREW_TAP_GITHUB_TOKEN \
             -e MACOS_SIGN_P12 \
