@@ -19,6 +19,17 @@ import (
 	"github.com/golang/geo/s2"
 )
 
+// RenderMode selects how the map is rendered. RenderGlyph uses the default
+// half-block ANSI renderer (works on any terminal). RenderKitty emits the
+// image via the Kitty graphics protocol and only works on terminals that
+// support it (Kitty, Ghostty, WezTerm, etc).
+type RenderMode int8
+
+const (
+	RenderGlyph RenderMode = iota
+	RenderKitty
+)
+
 type Style int8
 
 const (
@@ -41,6 +52,19 @@ type MapCoordinates struct {
 	Lat float64
 	Lng float64
 	Err error
+}
+
+// IsMapUpdate reports whether msg is a message the mapview's Update method
+// needs to see. Parent components (e.g. a page that contains a mapview
+// alongside other focusable widgets) should forward matching messages to the
+// mapview regardless of which sub-widget currently has focus — otherwise
+// async render results get routed to the wrong widget and lost.
+func IsMapUpdate(msg tea.Msg) bool {
+	switch msg.(type) {
+	case MapRender, MapCoordinates, kittyFrameMsg:
+		return true
+	}
+	return false
 }
 
 type NominatimResponse []struct {
@@ -116,6 +140,8 @@ type Model struct {
 	zoom         int
 	maprender    string
 	markers      []Marker
+	renderMode   RenderMode
+	tileStyle    Style
 }
 
 func New(width, height int) (m Model) {
@@ -130,6 +156,7 @@ func (m *Model) setInitialValues() {
 	m.osm = sm.NewContext()
 	m.osm.SetSize(400, 400)
 	m.tileProvider = sm.NewTileProviderOpenStreetMaps()
+	m.tileStyle = OpenStreetMaps
 	m.zoom = 15
 	m.lat = 25.0782266
 	m.lng = -77.3383438
@@ -144,6 +171,9 @@ func (m *Model) applyToOSM() {
 	m.osm.SetCenter(s2.LatLngFromDegrees(m.lat, m.lng))
 	m.osm.SetZoom(m.zoom)
 }
+
+// Center returns the current map center.
+func (m Model) Center() (lat, lng float64) { return m.lat, m.lng }
 
 // SetMarkers replaces all currently-drawn markers on the map. Pass an empty
 // slice (or call ClearMarkers) to remove them.
@@ -204,7 +234,29 @@ func getThunderforestAPIKey() string {
 	return "YOUR_THUNDERFOREST_API_KEY"
 }
 
-func (m *Model) SetStyle(style Style) {
+// RenderMode returns the current render mode.
+func (m Model) RenderMode() RenderMode { return m.renderMode }
+
+// SetRenderMode sets the render mode and returns a tea.Cmd that re-renders
+// the map at the new mode. Use the returned cmd so callers don't have to
+// manually poke the render loop. When leaving Kitty mode, a delete-image APC
+// is also emitted so the terminal drops the uploaded bitmap.
+func (m *Model) SetRenderMode(mode RenderMode) tea.Cmd {
+	prev := m.renderMode
+	m.renderMode = mode
+	cmd := m.render(m.Width, m.Height)
+	if prev == RenderKitty && mode != RenderKitty {
+		return tea.Batch(tea.Raw(kittyDeleteImage(kittyMapImageID)), cmd)
+	}
+	return cmd
+}
+
+// TileStyle returns the currently-selected tile style.
+func (m Model) TileStyle() Style { return m.tileStyle }
+
+// SetStyle switches the tile provider and returns a tea.Cmd that re-renders
+// the map at the new style.
+func (m *Model) SetStyle(style Style) tea.Cmd {
 	switch style {
 	case Wikimedia:
 		m.tileProvider = sm.NewTileProviderWikimedia()
@@ -231,7 +283,9 @@ func (m *Model) SetStyle(style Style) {
 	case ArcgisWorldImagery:
 		m.tileProvider = sm.NewTileProviderArcgisWorldImagery()
 	}
+	m.tileStyle = style
 	m.applyToOSM()
+	return m.render(m.Width, m.Height)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -303,6 +357,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.maprender = string(msg)
 		return m, nil
 
+	case kittyFrameMsg:
+		// Split a Kitty render: upload the image via tea.Raw (side channel,
+		// bypasses the cell renderer) and set the view to the placeholder
+		// grid. The terminal ties them together via image ID + diacritics.
+		m.maprender = msg.grid
+		return m, tea.Raw(msg.apc)
+
 	case MapCoordinates:
 		m.loc = ""
 		if msg.Err != nil {
@@ -328,6 +389,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m *Model) render(width, height int) tea.Cmd {
+	if m.renderMode == RenderKitty {
+		return m.renderKitty(width, height)
+	}
+	return m.renderGlyph(width, height)
+}
+
+func (m *Model) renderGlyph(width, height int) tea.Cmd {
 	return func() tea.Msg {
 		img, err := m.osm.Render()
 		if err != nil {

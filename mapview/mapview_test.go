@@ -105,6 +105,30 @@ func TestSetMarkersStoresAndClears(t *testing.T) {
 	}
 }
 
+func TestSetRenderModeTogglesAndReRenders(t *testing.T) {
+	m := New(80, 24)
+
+	if m.RenderMode() != RenderGlyph {
+		t.Fatalf("expected default render mode RenderGlyph, got %v", m.RenderMode())
+	}
+
+	cmd := m.SetRenderMode(RenderKitty)
+	if cmd == nil {
+		t.Fatal("expected SetRenderMode to return a render cmd")
+	}
+	if m.RenderMode() != RenderKitty {
+		t.Fatalf("expected RenderKitty after set, got %v", m.RenderMode())
+	}
+
+	cmd = m.SetRenderMode(RenderGlyph)
+	if cmd == nil {
+		t.Fatal("expected SetRenderMode to return a render cmd when going back to glyph")
+	}
+	if m.RenderMode() != RenderGlyph {
+		t.Fatalf("expected RenderGlyph after toggle back, got %v", m.RenderMode())
+	}
+}
+
 func TestUpdateZoomInRespectsUpperBound(t *testing.T) {
 	m := New(80, 24)
 	m.zoom = 16
