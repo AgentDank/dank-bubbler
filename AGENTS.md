@@ -4,9 +4,7 @@ This file tracks agent operations and project maintenance notes.
 
 ## Key Directives
 
-- **Prompt History**: Maintained in [PROMPTS.md](PROMPTS.md) with ISO 8601 timestamps
 - **Documentation**: See [README.md](README.md) for project overview
-- **Process**: Always append new prompts to PROMPTS.md; never delete history
 
 # dank-bubbler Project
 

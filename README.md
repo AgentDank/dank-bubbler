@@ -46,5 +46,4 @@ task run -- --db <path>  # Run dank-bubbler-ct
 
 ## Development
 
-Refer to [PROMPTS.md](PROMPTS.md) for the complete development history and prompts used.
 Refer to [AGENTS.md](AGENTS.md) for agent configuration and maintenance notes.
