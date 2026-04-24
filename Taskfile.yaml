@@ -64,7 +64,7 @@ tasks:
       - "**/*.go"
       - go.mod
     generates:
-      - ./bin/dank-bubbler-ct
+      - ./bin/kitty-probe
 
   run:kitty-probe:
     desc: Run kitty-probe

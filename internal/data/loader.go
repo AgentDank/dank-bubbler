@@ -115,6 +115,7 @@ func (l *Loader) LoadProducts() ([]models.Product, error) {
 			registration_number,
 			COALESCE(brand_name, 'Unknown') as brand_name,
 			COALESCE(dosage_form, 'Unknown') as dosage_form,
+			COALESCE(NULLIF(chemotype, ''), 'Unknown') as chemotype,
 			COALESCE(branding_entity, '') as branding_entity,
 			approval_date,
 			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
@@ -134,6 +135,7 @@ func (l *Loader) LoadProducts() ([]models.Product, error) {
 			&product.RegistrationNumber,
 			&product.BrandName,
 			&product.DosageForm,
+			&product.Chemotype,
 			&product.BrandingEntity,
 			&product.ApprovalDate,
 			&product.THC,
@@ -161,6 +163,7 @@ func (l *Loader) LoadProductsByBrand(brand string) ([]models.Product, error) {
 			registration_number,
 			COALESCE(brand_name, 'Unknown') as brand_name,
 			COALESCE(dosage_form, 'Unknown') as dosage_form,
+			COALESCE(NULLIF(chemotype, ''), 'Unknown') as chemotype,
 			COALESCE(branding_entity, '') as branding_entity,
 			approval_date,
 			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
@@ -181,6 +184,7 @@ func (l *Loader) LoadProductsByBrand(brand string) ([]models.Product, error) {
 			&product.RegistrationNumber,
 			&product.BrandName,
 			&product.DosageForm,
+			&product.Chemotype,
 			&product.BrandingEntity,
 			&product.ApprovalDate,
 			&product.THC,
@@ -197,8 +201,8 @@ func (l *Loader) LoadProductsByBrand(brand string) ([]models.Product, error) {
 	return products, rows.Err()
 }
 
-// LoadProductsByType loads products filtered by dosage_form (type)
-func (l *Loader) LoadProductsByType(dosageForm string) ([]models.Product, error) {
+// LoadProductsByType loads products filtered by chemotype (product type).
+func (l *Loader) LoadProductsByType(productType string) ([]models.Product, error) {
 	if l.db == nil {
 		return nil, fmt.Errorf("database not open")
 	}
@@ -208,16 +212,17 @@ func (l *Loader) LoadProductsByType(dosageForm string) ([]models.Product, error)
 			registration_number,
 			COALESCE(brand_name, 'Unknown') as brand_name,
 			COALESCE(dosage_form, 'Unknown') as dosage_form,
+			COALESCE(NULLIF(chemotype, ''), 'Unknown') as chemotype,
 			COALESCE(branding_entity, '') as branding_entity,
 			approval_date,
 			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
 			COALESCE(cannabidiols_cbd, 0) as cbd
 		FROM ct_brands
-		WHERE LOWER(dosage_form) = LOWER(?)
+		WHERE LOWER(COALESCE(NULLIF(chemotype, ''), 'Unknown')) = LOWER(?)
 		ORDER BY brand_name, registration_number
-	`, dosageForm)
+	`, productType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query products by dosage form: %w", err)
+		return nil, fmt.Errorf("failed to query products by type: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -228,6 +233,56 @@ func (l *Loader) LoadProductsByType(dosageForm string) ([]models.Product, error)
 			&product.RegistrationNumber,
 			&product.BrandName,
 			&product.DosageForm,
+			&product.Chemotype,
+			&product.BrandingEntity,
+			&product.ApprovalDate,
+			&product.THC,
+			&product.CBD,
+		); err != nil {
+			continue
+		}
+
+		product.ID = product.RegistrationNumber
+		product.Compounds = []models.Compound{}
+		products = append(products, product)
+	}
+
+	return products, rows.Err()
+}
+
+// LoadProductsByForm loads products filtered by dosage_form.
+func (l *Loader) LoadProductsByForm(form string) ([]models.Product, error) {
+	if l.db == nil {
+		return nil, fmt.Errorf("database not open")
+	}
+
+	rows, err := l.db.Query(`
+		SELECT
+			registration_number,
+			COALESCE(brand_name, 'Unknown') as brand_name,
+			COALESCE(dosage_form, 'Unknown') as dosage_form,
+			COALESCE(NULLIF(chemotype, ''), 'Unknown') as chemotype,
+			COALESCE(branding_entity, '') as branding_entity,
+			approval_date,
+			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
+			COALESCE(cannabidiols_cbd, 0) as cbd
+		FROM ct_brands
+		WHERE LOWER(COALESCE(dosage_form, 'Unknown')) = LOWER(?)
+		ORDER BY brand_name, registration_number
+	`, form)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query products by form: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var products []models.Product
+	for rows.Next() {
+		var product models.Product
+		if err := rows.Scan(
+			&product.RegistrationNumber,
+			&product.BrandName,
+			&product.DosageForm,
+			&product.Chemotype,
 			&product.BrandingEntity,
 			&product.ApprovalDate,
 			&product.THC,
@@ -272,19 +327,19 @@ func (l *Loader) GetDistinctBrands() ([]string, error) {
 	return brands, rows.Err()
 }
 
-// GetDistinctTypes returns a list of unique dosage forms
+// GetDistinctTypes returns a list of unique product chemotypes.
 func (l *Loader) GetDistinctTypes() ([]string, error) {
 	if l.db == nil {
 		return nil, fmt.Errorf("database not open")
 	}
 
 	rows, err := l.db.Query(`
-		SELECT DISTINCT COALESCE(dosage_form, 'Unknown')
+		SELECT DISTINCT COALESCE(NULLIF(chemotype, ''), 'Unknown') as product_type
 		FROM ct_brands
-		ORDER BY dosage_form
+		ORDER BY product_type
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query distinct dosage forms: %w", err)
+		return nil, fmt.Errorf("failed to query distinct product types: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -300,90 +355,42 @@ func (l *Loader) GetDistinctTypes() ([]string, error) {
 	return types, rows.Err()
 }
 
+// GetDistinctForms returns a list of unique dosage forms.
+func (l *Loader) GetDistinctForms() ([]string, error) {
+	if l.db == nil {
+		return nil, fmt.Errorf("database not open")
+	}
+
+	rows, err := l.db.Query(`
+		SELECT DISTINCT COALESCE(dosage_form, 'Unknown') as form
+		FROM ct_brands
+		ORDER BY form
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query distinct forms: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var forms []string
+	for rows.Next() {
+		var form string
+		if err := rows.Scan(&form); err != nil {
+			continue
+		}
+		forms = append(forms, form)
+	}
+
+	return forms, rows.Err()
+}
+
 // GetDistinctNames returns a list of unique product names.
 func (l *Loader) GetDistinctNames() ([]string, error) {
 	return l.GetDistinctBrands()
 }
 
-// GetDistinctDates returns a list of unique approval dates in YYYY-MM-DD format.
-func (l *Loader) GetDistinctDates() ([]string, error) {
-	if l.db == nil {
-		return nil, fmt.Errorf("database not open")
-	}
-
-	rows, err := l.db.Query(`
-		SELECT DISTINCT strftime(approval_date, '%Y-%m-%d') as approval_day
-		FROM ct_brands
-		WHERE approval_date IS NOT NULL
-		ORDER BY approval_day DESC
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query distinct approval dates: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var dates []string
-	for rows.Next() {
-		var day string
-		if err := rows.Scan(&day); err != nil {
-			continue
-		}
-		dates = append(dates, day)
-	}
-
-	return dates, rows.Err()
-}
-
 // LoadProductsByName loads products filtered by exact product name.
 func (l *Loader) LoadProductsByName(name string) ([]models.Product, error) {
 	return l.LoadProductsByBrand(name)
-}
-
-// LoadProductsByDate loads products filtered by approval date (YYYY-MM-DD).
-func (l *Loader) LoadProductsByDate(day string) ([]models.Product, error) {
-	if l.db == nil {
-		return nil, fmt.Errorf("database not open")
-	}
-
-	rows, err := l.db.Query(`
-		SELECT
-			registration_number,
-			COALESCE(brand_name, 'Unknown') as brand_name,
-			COALESCE(dosage_form, 'Unknown') as dosage_form,
-			COALESCE(branding_entity, '') as branding_entity,
-			approval_date,
-			COALESCE(tetrahydrocannabinol_thc, 0) as thc,
-			COALESCE(cannabidiols_cbd, 0) as cbd
-		FROM ct_brands
-		WHERE strftime(approval_date, '%Y-%m-%d') = ?
-		ORDER BY brand_name, registration_number
-	`, day)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query products by approval date: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var products []models.Product
-	for rows.Next() {
-		var product models.Product
-		if err := rows.Scan(
-			&product.RegistrationNumber,
-			&product.BrandName,
-			&product.DosageForm,
-			&product.BrandingEntity,
-			&product.ApprovalDate,
-			&product.THC,
-			&product.CBD,
-		); err != nil {
-			continue
-		}
-
-		product.ID = product.RegistrationNumber
-		product.Compounds = []models.Compound{}
-		products = append(products, product)
-	}
-
-	return products, rows.Err()
 }
 
 // LoadProductWithCompounds loads a product and its compound data.
@@ -405,7 +412,11 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 			COALESCE(cannabidiols_cbd, 0) as cbd,
 			COALESCE(cannabidiol_acid_cbda, 0) as cbda,
 			COALESCE(market, '') as market,
-			COALESCE(chemotype, '') as chemotype,
+			COALESCE(NULLIF(chemotype, ''), 'Unknown') as chemotype,
+			COALESCE(CAST(processing_technique AS VARCHAR), '') as processing_technique,
+			COALESCE(CAST(producer AS VARCHAR), '') as producer,
+			COALESCE(CAST(solvents_user AS VARCHAR), '') as solvents_user,
+			COALESCE(CAST(national_drug_code AS VARCHAR), '') as national_drug_code,
 			COALESCE(product_image_url, '') as product_image_url
 		FROM ct_brands
 		WHERE registration_number = ?
@@ -421,6 +432,10 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 		&product.CBDA,
 		&product.Market,
 		&product.Chemotype,
+		&product.ProcessingTechnique,
+		&product.Producer,
+		&product.SolventsUser,
+		&product.NationalDrugCode,
 		&product.ProductImageURL,
 	)
 

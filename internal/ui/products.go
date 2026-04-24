@@ -38,12 +38,13 @@ type ProductBrowser struct {
 	filterOptions []string
 	filterIdx     int
 	filterTitle   string
-	focused       bool
 	loader        *data.Loader
 	activeFilter  string
+	dateSort      ProductDateSort
 	help          help.Model
 	leftList      list.Model
 	tbl           table.Model
+	picture       pictureView
 	activePage    Page
 }
 
@@ -68,7 +69,17 @@ const (
 	FilterModeByBrand
 	FilterModeByName
 	FilterModeByType
-	FilterModeByDate
+	FilterModeByForm
+)
+
+// ProductDateSort describes the optional approval-date ordering for the
+// currently visible products.
+type ProductDateSort int
+
+const (
+	ProductDateSortNone ProductDateSort = iota
+	ProductDateSortNewest
+	ProductDateSortOldest
 )
 
 type FilterOptionItem struct {
@@ -96,13 +107,21 @@ var (
 		key.WithKeys("t"),
 		key.WithHelp("t", "type"),
 	)
-	dateFilterKey = key.NewBinding(
+	formFilterKey = key.NewBinding(
+		key.WithKeys("f"),
+		key.WithHelp("f", "form"),
+	)
+	dateSortKey = key.NewBinding(
 		key.WithKeys("d"),
-		key.WithHelp("d", "date"),
+		key.WithHelp("d", "date sort"),
 	)
 	clearFilterKey = key.NewBinding(
 		key.WithKeys("c"),
 		key.WithHelp("c", "clear"),
+	)
+	pictureModeKey = key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("g", "image"),
 	)
 	applyFilterKey = key.NewBinding(
 		key.WithKeys("enter"),
@@ -130,8 +149,10 @@ func (km browserHelpKeyMap) ShortHelp() []key.Binding {
 		brandFilterKey,
 		nameFilterKey,
 		typeFilterKey,
-		dateFilterKey,
+		formFilterKey,
+		dateSortKey,
 		clearFilterKey,
+		pictureModeKey,
 	}
 }
 
@@ -140,7 +161,7 @@ func (km browserHelpKeyMap) FullHelp() [][]key.Binding {
 		return [][]key.Binding{{pagesKey, moveKey, applyFilterKey, cancelFilterKey, quitKey}}
 	}
 
-	return [][]key.Binding{{pagesKey, moveKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, dateFilterKey, clearFilterKey}}
+	return [][]key.Binding{{pagesKey, moveKey, quitKey, brandFilterKey, nameFilterKey, typeFilterKey, formFilterKey, dateSortKey, clearFilterKey, pictureModeKey}}
 }
 
 func (f FilterOptionItem) FilterValue() string {
@@ -163,9 +184,9 @@ func NewProductBrowser(products []models.Product, brands []models.Brand, loader 
 		allProducts: append([]models.Product(nil), products...),
 		brands:      brands,
 		selectedIdx: 0,
-		focused:     true,
 		filterMode:  FilterModeNone,
 		loader:      loader,
+		dateSort:    ProductDateSortNewest,
 	}
 	pb.help = help.New()
 	pb.help.ShortSeparator = "  "
@@ -176,6 +197,8 @@ func NewProductBrowser(products []models.Product, brands []models.Brand, loader 
 	pb.help.Styles.Ellipsis = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	pb.leftList = newBrowserList()
 	pb.tbl = newProductTable()
+	pb.picture = newPictureView()
+	pb.applyDateSort()
 	pb.setProductItems()
 	pb.updateDimensions(80, 24)
 	// Prime selected product details
@@ -183,18 +206,51 @@ func NewProductBrowser(products []models.Product, brands []models.Brand, loader 
 	return pb
 }
 
-// Init initializes the product browser
+// Init initializes the product browser. Kicks off the initial product image
+// fetch so the picture pane lights up as soon as dimensions are known.
 func (pb *ProductBrowser) Init() tea.Cmd {
-	return nil
+	return pb.syncPictureURL()
+}
+
+// syncPictureURL pushes the currently-selected product's image URL into the
+// picture view. Safe to call when the product list is empty.
+func (pb *ProductBrowser) syncPictureURL() tea.Cmd {
+	if len(pb.products) == 0 {
+		return pb.picture.SetURL("")
+	}
+	return pb.picture.SetURL(pb.products[pb.selectedIdx].ProductImageURL)
+}
+
+// picturePaneInnerSize returns the inner cell dimensions of the picture pane
+// for the current window size, matching what View() will render into. Used
+// by Update when the window is resized, so the pictureView can re-render
+// its Kitty frame at the right grid.
+func (pb *ProductBrowser) picturePaneInnerSize() (int, int) {
+	middleH := pb.middleHeight()
+	_, bottomH := pb.middleSplit(middleH)
+	paneW := pb.width / 4
+	lastPaneW := max(pb.width-3*paneW, 0)
+	style := pb.infoPaneStyle()
+	innerW := max(lastPaneW-style.GetHorizontalFrameSize(), 0)
+	innerH := max(bottomH-style.GetVerticalFrameSize(), 0)
+	return innerW, innerH
 }
 
 // Update handles messages for the product browser
 func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Async picture-pane results (image fetch completions, Kitty frames)
+	// arrive here regardless of filter mode or keyboard focus.
+	if isPictureMsg(msg) {
+		return pb, pb.picture.Update(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		pb.width = msg.Width
 		pb.height = msg.Height
 		pb.updateDimensions(msg.Width, msg.Height)
+		picW, picH := pb.picturePaneInnerSize()
+		return pb, tea.Batch(pb.picture.SetSize(picW, picH), pb.syncPictureURL())
 
 	case tea.MouseWheelMsg:
 		m := msg.Mouse()
@@ -213,6 +269,7 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				pb.selectedIdx = newIndex
 				pb.loadSelectedProductDetails()
 				pb.updateInfoPane()
+				return pb, pb.syncPictureURL()
 			}
 			return pb, nil
 		}
@@ -249,17 +306,20 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			pb.openFilter(FilterModeByType)
 			return pb, nil
 
-		case "d": // Filter by date
-			pb.openFilter(FilterModeByDate)
+		case "f": // Filter by form
+			pb.openFilter(FilterModeByForm)
 			return pb, nil
+
+		case "d": // Toggle approval-date sort
+			pb.toggleDateSort()
+			return pb, pb.syncPictureURL()
 
 		case "c":
 			pb.clearFilter()
-			return pb, nil
+			return pb, pb.syncPictureURL()
 
-		case "f": // Toggle focused mode
-			pb.focused = !pb.focused
-			return pb, nil
+		case "g": // Toggle picture render mode (glyph ↔ kitty)
+			return pb, pb.picture.Toggle()
 
 		case "ctrl+c", "q":
 			return pb, tea.Quit
@@ -272,6 +332,7 @@ func (pb *ProductBrowser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if pb.selectedIdx != oldIndex {
 			pb.loadSelectedProductDetails()
 			pb.updateInfoPane()
+			return pb, tea.Batch(cmd, pb.syncPictureURL())
 		}
 		return pb, cmd
 	}
@@ -322,8 +383,11 @@ func (pb *ProductBrowser) View() tea.View {
 
 func (pb *ProductBrowser) renderPageFooterBar() string {
 	parts := []string{fmt.Sprintf("products: %d", len(pb.products))}
-	if pb.activeFilter != "" && pb.filterTitle != "" {
-		parts = append(parts, pb.filterTitle+": "+pb.activeFilter)
+	if pb.activeFilter != "" {
+		parts = append(parts, pb.activeFilter)
+	}
+	if label := pb.dateSortLabel(); label != "" {
+		parts = append(parts, "sort: "+label)
 	}
 	return renderPageFooter(pb.width, strings.Join(parts, "  ·  "), productsUpstreamURL)
 }
@@ -366,25 +430,23 @@ func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 	product := pb.products[pb.selectedIdx]
 
 	var info strings.Builder
-	info.WriteString(pb.styledLabel("Brand: "))
-	info.WriteString(product.BrandName)
-	info.WriteString("\n")
-
-	info.WriteString(pb.styledLabel("Type: "))
-	info.WriteString(product.DosageForm)
-	info.WriteString("\n")
-
-	info.WriteString(pb.styledLabel("Registration: "))
-	info.WriteString(product.RegistrationNumber)
-	info.WriteString("\n")
-
+	writeProductDetailLine(&info, pb, "brand_name", product.BrandName)
+	writeProductDetailLine(&info, pb, "dosage_form", product.DosageForm)
+	writeProductDetailLine(&info, pb, "producer", productProducer(product))
 	if !product.ApprovalDate.IsZero() {
-		info.WriteString(pb.styledLabel("Approved: "))
-		info.WriteString(product.ApprovalDate.Format("2006-01-02"))
-		info.WriteString("\n")
+		writeProductDetailLine(&info, pb, "approval_date", product.ApprovalDate.Format("2006-01-02"))
+	} else {
+		writeProductDetailLine(&info, pb, "approval_date", "")
 	}
+	writeProductDetailLine(&info, pb, "registration_number", product.RegistrationNumber)
+	writeProductDetailLine(&info, pb, "market", product.Market)
+	writeProductDetailLine(&info, pb, "chemotype", productType(product))
+	writeProductDetailLine(&info, pb, "processing_technique", product.ProcessingTechnique)
+	writeProductDetailLine(&info, pb, "solvents_user", product.SolventsUser)
+	writeProductDetailLine(&info, pb, "national_drug_code", product.NationalDrugCode)
 
 	if product.THC > 0 {
+		info.WriteString("\n")
 		info.WriteString(pb.styledLabel("THC: "))
 		_, _ = fmt.Fprintf(&info, "%.2f%%", product.THC)
 		info.WriteString("\n")
@@ -425,28 +487,15 @@ func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 		Render(content)
 }
 
-// renderPicturePane renders the selected product's image URL. This is the
-// placeholder for an eventual inline image; for now we just show the URL so
-// the user can copy or open it externally.
+// renderPicturePane wraps pictureView.View in the pane border. The inner
+// content — fetch state ("Loading…"), glyph render, or Kitty placeholder
+// grid — is owned by pictureView; this function only applies the pane frame.
 func (pb *ProductBrowser) renderPicturePane(outerWidth, outerHeight int) string {
 	style := pb.infoPaneStyle()
-	innerWidth := max(outerWidth-style.GetHorizontalFrameSize(), 0)
-	innerHeight := max(outerHeight-style.GetVerticalFrameSize(), 0)
 	if len(pb.products) == 0 {
 		return style.Width(outerWidth).Height(outerHeight).Render("No product selected")
 	}
-	product := pb.products[pb.selectedIdx]
-	url := product.ProductImageURL
-	if url == "" {
-		return style.Width(outerWidth).Height(outerHeight).Render("No image")
-	}
-
-	var body strings.Builder
-	body.WriteString(pb.styledLabel("Image URL:"))
-	body.WriteString("\n")
-	body.WriteString(url)
-	content := fitPaneContent(body.String(), innerWidth, innerHeight)
-	return style.Width(outerWidth).Height(outerHeight).Render(content)
+	return style.Width(outerWidth).Height(outerHeight).Render(pb.picture.View())
 }
 
 // fitPaneContent truncates each line to innerWidth (using ansi.Truncate so
@@ -799,7 +848,7 @@ func (pb *ProductBrowser) configureLeftList(outerWidth, outerHeight int) {
 	pb.selectedIdx = pb.tbl.Cursor()
 }
 
-// productTableColumns distributes innerW across brand / approval date / form.
+// productTableColumns distributes innerW across brand / approval date / type.
 // The bubbles/v2 table widget renders each cell with 1-char L/R padding, so
 // the natural width is sum(widths) + 2*ncols; overflow wraps via lipgloss and
 // doubles the pane height. The sum-of-widths budget here is innerW - 6 (3
@@ -808,9 +857,9 @@ func (pb *ProductBrowser) configureLeftList(outerWidth, outerHeight int) {
 // "YYYY-MM-DD") and the header truncates with an ellipsis.
 func productTableColumns(innerW int) []table.Column {
 	const (
-		ncols        = 3
-		dateHeaderW  = 13 // "approval date"
-		dateBodyW    = 10 // "YYYY-MM-DD"
+		ncols       = 3
+		dateHeaderW = 13 // "approval date"
+		dateBodyW   = 10 // "YYYY-MM-DD"
 	)
 	budget := max(innerW-2*ncols, 3)
 
@@ -824,11 +873,11 @@ func productTableColumns(innerW int) []table.Column {
 
 	remainder := max(budget-dateW, 2)
 	brandW := max(remainder*3/5, 1)
-	formW := max(remainder-brandW, 1)
+	typeW := max(remainder-brandW, 1)
 	return []table.Column{
 		{Title: "brand", Width: brandW},
 		{Title: "approval date", Width: dateW},
-		{Title: "form", Width: formW},
+		{Title: "type", Width: typeW},
 	}
 }
 
@@ -863,9 +912,9 @@ func (pb *ProductBrowser) openFilter(mode FilterMode) {
 	case FilterModeByType:
 		pb.filterTitle = "Filter By Type"
 		err = pb.buildTypeFilterOptions()
-	case FilterModeByDate:
-		pb.filterTitle = "Filter By Date"
-		err = pb.buildDateFilterOptions()
+	case FilterModeByForm:
+		pb.filterTitle = "Filter By Form"
+		err = pb.buildFormFilterOptions()
 	default:
 		pb.filterMode = FilterModeNone
 		return
@@ -887,7 +936,7 @@ func (pb *ProductBrowser) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		pb.applySelectedFilter()
-		return pb, nil
+		return pb, pb.syncPictureURL()
 	case "esc":
 		pb.cancelFilter()
 		return pb, nil
@@ -927,8 +976,8 @@ func (pb *ProductBrowser) applySelectedFilter() {
 		products, err = pb.loadProductsByName(value)
 	case FilterModeByType:
 		products, err = pb.loadProductsByType(value)
-	case FilterModeByDate:
-		products, err = pb.loadProductsByDate(value)
+	case FilterModeByForm:
+		products, err = pb.loadProductsByForm(value)
 	default:
 		return
 	}
@@ -940,6 +989,7 @@ func (pb *ProductBrowser) applySelectedFilter() {
 	pb.products = products
 	pb.selectedIdx = 0
 	pb.activeFilter = pb.filterLabel(mode, value)
+	pb.applyDateSort()
 	pb.setProductItems()
 	if len(pb.products) > 0 {
 		pb.loadSelectedProductDetails()
@@ -960,11 +1010,91 @@ func (pb *ProductBrowser) clearFilter() {
 	pb.activeFilter = ""
 	pb.products = append([]models.Product(nil), pb.allProducts...)
 	pb.selectedIdx = 0
+	pb.applyDateSort()
 	pb.setProductItems()
 	if len(pb.products) > 0 {
 		pb.loadSelectedProductDetails()
 	}
 	pb.updateInfoPane()
+}
+
+func (pb *ProductBrowser) toggleDateSort() {
+	selectedID := ""
+	if len(pb.products) > 0 && pb.selectedIdx >= 0 && pb.selectedIdx < len(pb.products) {
+		selectedID = pb.products[pb.selectedIdx].RegistrationNumber
+	}
+
+	switch pb.dateSort {
+	case ProductDateSortNewest:
+		pb.dateSort = ProductDateSortOldest
+	default:
+		pb.dateSort = ProductDateSortNewest
+	}
+	pb.applyDateSort()
+	if selectedID != "" {
+		for i, product := range pb.products {
+			if product.RegistrationNumber == selectedID {
+				pb.selectedIdx = i
+				break
+			}
+		}
+	}
+	pb.setProductItems()
+	pb.updateInfoPane()
+}
+
+func (pb *ProductBrowser) applyDateSort() {
+	switch pb.dateSort {
+	case ProductDateSortNewest:
+		sort.SliceStable(pb.products, func(i, j int) bool {
+			return productDateNewer(pb.products[i], pb.products[j])
+		})
+	case ProductDateSortOldest:
+		sort.SliceStable(pb.products, func(i, j int) bool {
+			return productDateOlder(pb.products[i], pb.products[j])
+		})
+	}
+}
+
+func productDateNewer(a, b models.Product) bool {
+	aZero := a.ApprovalDate.IsZero()
+	bZero := b.ApprovalDate.IsZero()
+	switch {
+	case aZero && bZero:
+		return false
+	case aZero:
+		return false
+	case bZero:
+		return true
+	default:
+		return a.ApprovalDate.After(b.ApprovalDate)
+	}
+}
+
+func productDateOlder(a, b models.Product) bool {
+	aZero := a.ApprovalDate.IsZero()
+	bZero := b.ApprovalDate.IsZero()
+	switch {
+	case aZero && bZero:
+		return false
+	case aZero:
+		return false
+	case bZero:
+		return true
+	default:
+		return a.ApprovalDate.Before(b.ApprovalDate)
+	}
+}
+
+func (pb *ProductBrowser) dateSortLabel() string {
+	switch pb.dateSort {
+	case ProductDateSortNewest:
+		return "approval_date desc"
+	case ProductDateSortOldest:
+		return "approval_date asc"
+	default:
+		return ""
+	}
 }
 
 func (pb *ProductBrowser) currentFilterLabel() string {
@@ -979,8 +1109,8 @@ func (pb *ProductBrowser) filterLabel(mode FilterMode, value string) string {
 		return "name: " + value
 	case FilterModeByType:
 		return "type: " + value
-	case FilterModeByDate:
-		return "date: " + value
+	case FilterModeByForm:
+		return "form: " + value
 	default:
 		return value
 	}
@@ -1045,7 +1175,7 @@ func (pb *ProductBrowser) buildTypeFilterOptions() error {
 
 	typeMap := make(map[string]struct{})
 	for _, p := range pb.allProducts {
-		typeMap[p.DosageForm] = struct{}{}
+		typeMap[productType(p)] = struct{}{}
 	}
 	for t := range typeMap {
 		pb.filterOptions = append(pb.filterOptions, t)
@@ -1055,29 +1185,26 @@ func (pb *ProductBrowser) buildTypeFilterOptions() error {
 	return nil
 }
 
-func (pb *ProductBrowser) buildDateFilterOptions() error {
+func (pb *ProductBrowser) buildFormFilterOptions() error {
 	if pb.loader != nil {
-		options, err := pb.loader.GetDistinctDates()
+		options, err := pb.loader.GetDistinctForms()
 		if err != nil {
 			return err
 		}
 		pb.filterOptions = options
-		pb.preselectActiveFilter(FilterModeByDate)
+		pb.preselectActiveFilter(FilterModeByForm)
 		return nil
 	}
 
-	dateMap := make(map[string]struct{})
+	formMap := make(map[string]struct{})
 	for _, p := range pb.allProducts {
-		if p.ApprovalDate.IsZero() {
-			continue
-		}
-		dateMap[p.ApprovalDate.Format("2006-01-02")] = struct{}{}
+		formMap[productForm(p)] = struct{}{}
 	}
-	for day := range dateMap {
-		pb.filterOptions = append(pb.filterOptions, day)
+	for form := range formMap {
+		pb.filterOptions = append(pb.filterOptions, form)
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(pb.filterOptions)))
-	pb.preselectActiveFilter(FilterModeByDate)
+	sort.Strings(pb.filterOptions)
+	pb.preselectActiveFilter(FilterModeByForm)
 	return nil
 }
 
@@ -1090,8 +1217,8 @@ func (pb *ProductBrowser) preselectActiveFilter(mode FilterMode) {
 		wantPrefix = "name: "
 	case FilterModeByType:
 		wantPrefix = "type: "
-	case FilterModeByDate:
-		wantPrefix = "date: "
+	case FilterModeByForm:
+		wantPrefix = "form: "
 	}
 
 	if wantPrefix == "" || !strings.HasPrefix(pb.activeFilter, wantPrefix) {
@@ -1135,31 +1262,28 @@ func (pb *ProductBrowser) loadProductsByName(name string) ([]models.Product, err
 	return products, nil
 }
 
-func (pb *ProductBrowser) loadProductsByType(productType string) ([]models.Product, error) {
+func (pb *ProductBrowser) loadProductsByType(selectedType string) ([]models.Product, error) {
 	if pb.loader != nil {
-		return pb.loader.LoadProductsByType(productType)
+		return pb.loader.LoadProductsByType(selectedType)
 	}
 
 	var products []models.Product
 	for _, product := range pb.allProducts {
-		if strings.EqualFold(product.DosageForm, productType) {
+		if strings.EqualFold(productType(product), selectedType) {
 			products = append(products, product)
 		}
 	}
 	return products, nil
 }
 
-func (pb *ProductBrowser) loadProductsByDate(day string) ([]models.Product, error) {
+func (pb *ProductBrowser) loadProductsByForm(selectedForm string) ([]models.Product, error) {
 	if pb.loader != nil {
-		return pb.loader.LoadProductsByDate(day)
+		return pb.loader.LoadProductsByForm(selectedForm)
 	}
 
 	var products []models.Product
 	for _, product := range pb.allProducts {
-		if product.ApprovalDate.IsZero() {
-			continue
-		}
-		if product.ApprovalDate.Format("2006-01-02") == day {
+		if strings.EqualFold(productForm(product), selectedForm) {
 			products = append(products, product)
 		}
 	}
@@ -1198,7 +1322,7 @@ func newProductTable() table.Model {
 		table.WithColumns([]table.Column{
 			{Title: "brand", Width: 12},
 			{Title: "approval date", Width: 13},
-			{Title: "form", Width: 8},
+			{Title: "type", Width: 8},
 		}),
 		table.WithFocused(true),
 		table.WithStyles(styles),
@@ -1241,7 +1365,7 @@ func (pb *ProductBrowser) setProductItems() {
 		if !product.ApprovalDate.IsZero() {
 			approved = product.ApprovalDate.Format("2006-01-02")
 		}
-		rows = append(rows, table.Row{brand, approved, product.DosageForm})
+		rows = append(rows, table.Row{brand, approved, productType(product)})
 	}
 	pb.tbl.SetRows(rows)
 	if len(rows) == 0 {
@@ -1268,4 +1392,41 @@ func (pb *ProductBrowser) setFilterItems() {
 
 	pb.filterIdx = min(pb.filterIdx, len(items)-1)
 	pb.leftList.Select(pb.filterIdx)
+}
+
+func productType(product models.Product) string {
+	value := productTypeValue(product)
+	if value == "" {
+		return "Unknown"
+	}
+	return value
+}
+
+func productTypeValue(product models.Product) string {
+	return strings.TrimSpace(product.Chemotype)
+}
+
+func productForm(product models.Product) string {
+	value := strings.TrimSpace(product.DosageForm)
+	if value == "" {
+		return "Unknown"
+	}
+	return value
+}
+
+func productProducer(product models.Product) string {
+	if strings.TrimSpace(product.Producer) != "" {
+		return product.Producer
+	}
+	return product.BrandingEntity
+}
+
+func writeProductDetailLine(info *strings.Builder, pb *ProductBrowser, label, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "-"
+	}
+	info.WriteString(pb.styledLabel(label + ": "))
+	info.WriteString(value)
+	info.WriteString("\n")
 }

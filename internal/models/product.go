@@ -9,6 +9,7 @@ type Product struct {
 	BrandName           string     // brand_name
 	DosageForm          string     // dosage_form
 	BrandingEntity      string     // branding_entity
+	Producer            string     // producer
 	RegistrationNumber  string     // registration_number (unique ID)
 	ApprovalDate        time.Time  // approval_date
 	THC                 float64    // tetrahydrocannabinol_thc
@@ -20,6 +21,8 @@ type Product struct {
 	Market              string     // market (e.g., "CT")
 	Chemotype           string     // chemotype
 	ProcessingTechnique string     // processing_technique
+	SolventsUser        string     // solvents_user
+	NationalDrugCode    string     // national_drug_code
 	ProductImageURL     string     // product_image_url
 }
 

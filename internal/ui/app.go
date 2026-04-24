@@ -117,6 +117,14 @@ func (a *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
+	// Product-picture async messages (image fetch results, Kitty frames) must
+	// likewise always land on the products page, since fetches may complete
+	// while the user is on a different tab.
+	if isPictureMsg(msg) {
+		_, cmd := a.products.Update(msg)
+		return a, cmd
+	}
+
 	return a.forwardToActive(msg)
 }
 
