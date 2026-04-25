@@ -432,7 +432,7 @@ func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 	var info strings.Builder
 	writeProductDetailLine(&info, pb, "brand_name", product.BrandName)
 	writeProductDetailLine(&info, pb, "dosage_form", product.DosageForm)
-	writeProductDetailLine(&info, pb, "producer", productProducer(product))
+	writeProductDetailLine(&info, pb, "branding_entity", product.BrandingEntity)
 	if !product.ApprovalDate.IsZero() {
 		writeProductDetailLine(&info, pb, "approval_date", product.ApprovalDate.Format("2006-01-02"))
 	} else {
@@ -442,7 +442,7 @@ func (pb *ProductBrowser) renderInfoPane(outerWidth, outerHeight int) string {
 	writeProductDetailLine(&info, pb, "market", product.Market)
 	writeProductDetailLine(&info, pb, "chemotype", productType(product))
 	writeProductDetailLine(&info, pb, "processing_technique", product.ProcessingTechnique)
-	writeProductDetailLine(&info, pb, "solvents_user", product.SolventsUser)
+	writeProductDetailLine(&info, pb, "solvents_used", product.SolventsUsed)
 	writeProductDetailLine(&info, pb, "national_drug_code", product.NationalDrugCode)
 
 	if product.THC > 0 {
@@ -1412,13 +1412,6 @@ func productForm(product models.Product) string {
 		return "Unknown"
 	}
 	return value
-}
-
-func productProducer(product models.Product) string {
-	if strings.TrimSpace(product.Producer) != "" {
-		return product.Producer
-	}
-	return product.BrandingEntity
 }
 
 func writeProductDetailLine(info *strings.Builder, pb *ProductBrowser, label, value string) {

@@ -4,7 +4,6 @@ package data
 import (
 	"database/sql"
 	"fmt"
-	"sort"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -399,7 +398,24 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 		return nil, fmt.Errorf("database not open")
 	}
 
-	var product models.Product
+	var (
+		regNum, brandName, dosageForm, brandingEntity string
+		approvalDate                                   time.Time
+		thc, thca, cbd, cbda                         float64
+		market, chemotype, processingTechnique         string
+		solventsUsed, nationalDrugCode                 string
+		productImageURL, labelImageURL, labAnalysisURL string
+		// Cannabinoids
+		cbc, cbn, cbg, cbga, cbdv, thcv float64
+		// Terpenes
+		aPinene, bMyrcene, bCaryophyllene, bPinene, limonene, linalool, humulene, ocimene, terpinolene float64
+		// Additional terpenes
+		aBisabolol, aPhellandrene, aTerpinene, bEudesmol, bTerpinene, fenchone, pulegol, borneol, isopulegol float64
+		carene, camphene, camphor, caryophylleneOxide, cedrol, eucalyptol, geraniol, guaiol, geranylAcetate float64
+		isoborneol, menthol, lFenchone, nerol, sabinene, terpineol, transBFarnesene, valencene float64
+		aCedrene, aFarnesene, bFarnesene, cisNerolidol, fenchol, transNerolidol float64
+	)
+
 	err := l.db.QueryRow(`
 		SELECT
 			registration_number,
@@ -414,46 +430,11 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 			COALESCE(market, '') as market,
 			COALESCE(NULLIF(chemotype, ''), 'Unknown') as chemotype,
 			COALESCE(CAST(processing_technique AS VARCHAR), '') as processing_technique,
-			COALESCE(CAST(producer AS VARCHAR), '') as producer,
-			COALESCE(CAST(solvents_user AS VARCHAR), '') as solvents_user,
+			COALESCE(CAST(solvents_used AS VARCHAR), '') as solvents_used,
 			COALESCE(CAST(national_drug_code AS VARCHAR), '') as national_drug_code,
-			COALESCE(product_image_url, '') as product_image_url
-		FROM ct_brands
-		WHERE registration_number = ?
-	`, registrationNumber).Scan(
-		&product.RegistrationNumber,
-		&product.BrandName,
-		&product.DosageForm,
-		&product.BrandingEntity,
-		&product.ApprovalDate,
-		&product.THC,
-		&product.THCA,
-		&product.CBD,
-		&product.CBDA,
-		&product.Market,
-		&product.Chemotype,
-		&product.ProcessingTechnique,
-		&product.Producer,
-		&product.SolventsUser,
-		&product.NationalDrugCode,
-		&product.ProductImageURL,
-	)
-
-	if err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("failed to query product: %w", err)
-	}
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("product not found")
-	}
-
-	product.ID = product.RegistrationNumber
-	product.OtherCannabinoids = []models.Compound{}
-	product.Compounds = []models.Compound{}
-
-	// Load additional cannabinoids and terpenes for the detail pane and chart.
-	cannaRow := l.db.QueryRow(`
-		SELECT
+			COALESCE(product_image_url, '') as product_image_url,
+			COALESCE(label_image_url, '') as label_image_url,
+			COALESCE(lab_analysis_url, '') as lab_analysis_url,
 			COALESCE(cannabichromene_cbc, 0) as cbc,
 			COALESCE(cannbinol_cbn, 0) as cbn,
 			COALESCE(cbg, 0) as cbg,
@@ -463,55 +444,78 @@ func (l *Loader) LoadProductWithCompounds(registrationNumber string) (*models.Pr
 			COALESCE(a_pinene, 0) as a_pinene,
 			COALESCE(b_myrcene, 0) as b_myrcene,
 			COALESCE(b_caryophyllene, 0) as b_caryophyllene,
+			COALESCE(b_pinene, 0) as b_pinene,
 			COALESCE(limonene, 0) as limonene,
 			COALESCE(linalool_lin, 0) as linalool,
 			COALESCE(humulene_hum, 0) as humulene,
 			COALESCE(ocimene, 0) as ocimene,
-			COALESCE(terpinolene, 0) as terpinolene
+			COALESCE(terpinolene, 0) as terpinolene,
+			COALESCE(a_bisabolol, 0) as a_bisabolol,
+			COALESCE(a_phellandrene, 0) as a_phellandrene,
+			COALESCE(a_terpinene, 0) as a_terpinene,
+			COALESCE(b_eudesmol, 0) as b_eudesmol,
+			COALESCE(b_terpinene, 0) as b_terpinene,
+			COALESCE(fenchone, 0) as fenchone,
+			COALESCE(pulegol, 0) as pulegol,
+			COALESCE(borneol, 0) as borneol,
+			COALESCE(isopulegol, 0) as isopulegol,
+			COALESCE(carene, 0) as carene,
+			COALESCE(camphene, 0) as camphene,
+			COALESCE(camphor, 0) as camphor,
+			COALESCE(caryophyllene_oxide, 0) as caryophyllene_oxide,
+			COALESCE(cedrol, 0) as cedrol,
+			COALESCE(eucalyptol, 0) as eucalyptol,
+			COALESCE(geraniol, 0) as geraniol,
+			COALESCE(guaiol, 0) as guaiol,
+			COALESCE(geranyl_acetate, 0) as geranyl_acetate,
+			COALESCE(isoborneol, 0) as isoborneol,
+			COALESCE(menthol, 0) as menthol,
+			COALESCE(l_fenchone, 0) as l_fenchone,
+			COALESCE(nerol, 0) as nerol,
+			COALESCE(sabinene, 0) as sabinene,
+			COALESCE(terpineol, 0) as terpineol,
+			COALESCE(trans_b_farnesene, 0) as trans_b_farnesene,
+			COALESCE(valencene, 0) as valencene,
+			COALESCE(a_cedrene, 0) as a_cedrene,
+			COALESCE(a_farnesene, 0) as a_farnesene,
+			COALESCE(b_farnesene, 0) as b_farnesene,
+			COALESCE(cis_nerolidol, 0) as cis_nerolidol,
+			COALESCE(fenchol, 0) as fenchol,
+			COALESCE(trans_nerolidol, 0) as trans_nerolidol
 		FROM ct_brands
 		WHERE registration_number = ?
-	`, registrationNumber)
-
-	var cbc, cbn, cbg, cbga, cbdv, thcv float64
-	var aPinene, bMyrcene, bCaryophyllene, limonene, linalool, humulene, ocimene, terpinolene float64
-	if err := cannaRow.Scan(
+	`, registrationNumber).Scan(
+		&regNum, &brandName, &dosageForm, &brandingEntity, &approvalDate,
+		&thc, &thca, &cbd, &cbda, &market, &chemotype, &processingTechnique,
+		&solventsUsed, &nationalDrugCode, &productImageURL, &labelImageURL, &labAnalysisURL,
 		&cbc, &cbn, &cbg, &cbga, &cbdv, &thcv,
-		&aPinene, &bMyrcene, &bCaryophyllene, &limonene, &linalool, &humulene, &ocimene, &terpinolene,
-	); err == nil {
-		addCann := func(name string, v float64) {
-			if v > 0 {
-				product.OtherCannabinoids = append(product.OtherCannabinoids, models.Compound{Name: name, Percentage: v})
-			}
-		}
-		addCann("CBC", cbc)
-		addCann("CBN", cbn)
-		addCann("CBG", cbg)
-		addCann("CBGA", cbga)
-		addCann("CBDV", cbdv)
-		addCann("THCV", thcv)
+		&aPinene, &bMyrcene, &bCaryophyllene, &bPinene, &limonene, &linalool, &humulene, &ocimene, &terpinolene,
+		&aBisabolol, &aPhellandrene, &aTerpinene, &bEudesmol, &bTerpinene, &fenchone, &pulegol, &borneol, &isopulegol,
+		&carene, &camphene, &camphor, &caryophylleneOxide, &cedrol, &eucalyptol, &geraniol, &guaiol, &geranylAcetate,
+		&isoborneol, &menthol, &lFenchone, &nerol, &sabinene, &terpineol, &transBFarnesene, &valencene,
+		&aCedrene, &aFarnesene, &bFarnesene, &cisNerolidol, &fenchol, &transNerolidol,
+	)
 
-		addTerp := func(name string, v float64) {
-			if v > 0 {
-				product.Compounds = append(product.Compounds, models.Compound{Name: name, Percentage: v})
-			}
-		}
-		addTerp("α-Pinene", aPinene)
-		addTerp("β-Myrcene", bMyrcene)
-		addTerp("β-Caryophyllene", bCaryophyllene)
-		addTerp("Limonene", limonene)
-		addTerp("Linalool", linalool)
-		addTerp("Humulene", humulene)
-		addTerp("Ocimene", ocimene)
-		addTerp("Terpinolene", terpinolene)
-
-		sort.Slice(product.OtherCannabinoids, func(i, j int) bool {
-			return product.OtherCannabinoids[i].Percentage > product.OtherCannabinoids[j].Percentage
-		})
-		sort.Slice(product.Compounds, func(i, j int) bool {
-			return product.Compounds[i].Percentage > product.Compounds[j].Percentage
-		})
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to query product: %w", err)
+	}
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("product not found")
 	}
 
+	b := models.BrandFromRaw(
+		regNum, brandName, dosageForm, brandingEntity, approvalDate,
+		productImageURL, labelImageURL, labAnalysisURL,
+		thc, thca, cbd, cbda,
+		market, chemotype, processingTechnique, solventsUsed, nationalDrugCode,
+		cbc, cbn, cbg, cbga, cbdv, thcv,
+		aPinene, bMyrcene, bCaryophyllene, bPinene, limonene, linalool, humulene, ocimene, terpinolene,
+		aBisabolol, aPhellandrene, aTerpinene, bEudesmol, bTerpinene, fenchone, pulegol, borneol, isopulegol,
+		carene, camphene, camphor, caryophylleneOxide, cedrol, eucalyptol, geraniol, guaiol, geranylAcetate,
+		isoborneol, menthol, lFenchone, nerol, sabinene, terpineol, transBFarnesene, valencene,
+		aCedrene, aFarnesene, bFarnesene, cisNerolidol, fenchol, transNerolidol,
+	)
+	product := models.ProductFromBrand(b)
 	return &product, nil
 }
 
